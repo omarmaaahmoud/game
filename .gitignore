@@ -20,6 +20,5 @@ database/*.sqlite-wal
 database/*.sqlite-shm
 .DS_Store
 Thumbs.db
-*.mp4
-*.webm
+b_Create_a_cinematic_8.mp4
 
