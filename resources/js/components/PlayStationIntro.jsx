@@ -3,10 +3,10 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
-  const [isDone, setIsDone] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [hasSound, setHasSound] = useState(false);
+  const [isDone, setIsDone] = useState(false);
   const completedRef = useRef(false);
-  const fadingRef = useRef(false);
 
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
@@ -41,22 +41,25 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
 
   const toggleSound = useCallback((e) => {
     if (e) e.stopPropagation();
-    if (videoRef.current) {
-      videoRef.current.muted = false;
-      videoRef.current.volume = 1.0;
+    const video = videoRef.current;
+    if (video) {
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
+      video.muted = false;
+      video.volume = 1.0;
       setHasSound(true);
       if (onPlaySound) onPlaySound();
     }
   }, [onPlaySound]);
 
-  const handleContainerClick = useCallback(() => {
+  // Screen tap handler: plays video if paused and enables sound
+  const handleScreenTap = useCallback(() => {
     const video = videoRef.current;
     if (video) {
-      // If paused for any reason, force play
       if (video.paused) {
-        video.play().catch(() => {});
+        video.play().then(() => setIsPlaying(true)).catch(() => {});
       }
-      // Un-mute on first touch/click
       if (video.muted) {
         video.muted = false;
         video.volume = 1.0;
@@ -66,12 +69,12 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     }
   }, [onPlaySound]);
 
-  // Robust Callback Ref: Sets autoplay and muted DOM properties immediately on mount
-  const setVideoNode = useCallback((node) => {
+  // Robust Callback Ref for instant Mobile Safari / Android Autoplay
+  const setVideoRef = useCallback((node) => {
     if (!node) return;
     videoRef.current = node;
 
-    // Direct DOM property enforcement required by iOS Safari & Android
+    // Direct property and attribute enforcement for iOS WebKit
     node.muted = true;
     node.defaultMuted = true;
     node.playsInline = true;
@@ -80,20 +83,23 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     node.setAttribute('webkit-playsinline', '');
     node.setAttribute('autoplay', '');
 
-    const startPlay = () => {
+    const attemptPlay = () => {
       node.muted = true;
-      const p = node.play();
-      if (p !== undefined) {
-        p.catch(() => {
-          node.muted = true;
-          node.play().catch(() => {});
+      const promise = node.play();
+      if (promise !== undefined) {
+        promise.then(() => {
+          setIsPlaying(true);
+        }).catch((err) => {
+          // iOS Low Power Mode blocks autoplay; tap anywhere will start it
+          console.warn('Autoplay waiting for user gesture (e.g. Low Power Mode):', err);
+          setIsPlaying(false);
         });
       }
     };
 
-    startPlay();
-    node.addEventListener('loadedmetadata', startPlay, { once: true });
-    node.addEventListener('canplay', startPlay, { once: true });
+    attemptPlay();
+    node.addEventListener('loadedmetadata', attemptPlay, { once: true });
+    node.addEventListener('canplay', attemptPlay, { once: true });
   }, []);
 
   useEffect(() => {
@@ -104,52 +110,38 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     const video = videoRef.current;
     if (!video) return;
 
-    // Try starting playback in effect as well
+    // Retry play in effect
     video.muted = true;
     video.defaultMuted = true;
-    video.play().catch(() => {
-      video.muted = true;
-      video.play().catch(() => {});
-    });
+    video.play().then(() => setIsPlaying(true)).catch(() => {});
 
-    // Seamless dive-in transition: only dissolve at the very end of the controller dive
-    const handleTimeUpdate = () => {
-      if (!video || fadingRef.current) return;
-      const duration = video.duration || 4.0;
-      const remaining = duration - video.currentTime;
-
-      // Start quick dissolve only in the last 0.25s of the video (after full controller dive)
-      if (remaining <= 0.25 && containerRef.current) {
-        fadingRef.current = true;
-        containerRef.current.style.transition = 'opacity 0.25s ease-out, transform 0.25s ease-out';
+    // Transition ONLY at the very end when the camera dives through into the webpage
+    const handleEnded = () => {
+      if (containerRef.current) {
+        containerRef.current.style.transition = 'opacity 0.2s ease-out';
         containerRef.current.style.opacity = '0';
-        containerRef.current.style.transform = 'scale(1.03)';
         containerRef.current.style.pointerEvents = 'none';
+        setTimeout(finishIntro, 200);
+      } else {
+        finishIntro();
       }
     };
 
-    const handleEnded = () => {
-      finishIntro();
-    };
-
     const handleError = () => {
-      // Gracefully advance if video file fails
       finishIntro();
     };
 
-    // Safety timeout: 4.0s video, timeout at 4.6s guarantees it never blocks
+    // Safety timeout: 4.0s video, finishes at 4.6s if not already ended
     const safetyTimer = setTimeout(() => {
       finishIntro();
     }, 4600);
 
-    video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleError);
 
     return () => {
       clearTimeout(safetyTimer);
       if (video) {
-        video.removeEventListener('timeupdate', handleTimeUpdate);
         video.removeEventListener('ended', handleEnded);
         video.removeEventListener('error', handleError);
         video.pause();
@@ -165,8 +157,8 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   return (
     <div
       ref={containerRef}
-      onClick={handleContainerClick}
-      onTouchStart={handleContainerClick}
+      onClick={handleScreenTap}
+      onTouchStart={handleScreenTap}
       style={{
         position: 'fixed',
         inset: 0,
@@ -174,47 +166,62 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         backgroundColor: '#000000',
         overflow: 'hidden',
         cursor: 'pointer',
-        willChange: 'opacity, transform',
+        willChange: 'opacity',
       }}
       aria-label="Cinematic PlayStation Intro"
     >
-      {/* 1080p 24FPS Cinematic Video (MP4 first for 100% universal iOS/Android autoplay, WebM second) */}
+      <style>{`
+        /* Hide iOS Safari native grey circular play button */
+        video::-webkit-media-controls {
+          display: none !important;
+        }
+        video::-webkit-media-controls-start-playback-button {
+          display: none !important;
+          -webkit-appearance: none;
+          opacity: 0 !important;
+        }
+        video::-webkit-media-controls-play-button {
+          display: none !important;
+        }
+      `}</style>
+
+      {/* 1080p 24FPS Cinematic Video (Native FastStart MP4 directly on src for iOS Safari) */}
       <video
-        ref={setVideoNode}
+        ref={setVideoRef}
+        src="/intro.mp4"
         autoPlay
         muted
         playsInline
         preload="auto"
         webkit-playsinline="true"
         x5-playsinline="true"
+        controls={false}
         style={{
           width: '100%',
           height: '100%',
           objectFit: 'cover',
           display: 'block',
           backgroundColor: '#000000',
+          pointerEvents: 'none',
         }}
-      >
-        <source src="/intro.mp4" type="video/mp4" />
-        <source src="/intro.webm" type="video/webm" />
-      </video>
+      />
 
       {/* Official Tecorbi Company Logo & Emblem Watermark (Top Left) */}
       <div
         style={{
           position: 'fixed',
-          top: '24px',
-          left: '28px',
+          top: '20px',
+          left: '20px',
           zIndex: 100001,
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
-          padding: '8px 16px',
+          gap: '10px',
+          padding: '8px 14px',
           borderRadius: '9999px',
-          background: 'rgba(8, 14, 34, 0.65)',
+          background: 'rgba(8, 14, 34, 0.7)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          border: '1px solid rgba(147, 197, 253, 0.25)',
+          border: '1px solid rgba(147, 197, 253, 0.3)',
           boxShadow: '0 0 25px rgba(0, 0, 0, 0.6)',
           pointerEvents: 'none',
           userSelect: 'none',
@@ -224,8 +231,8 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           src="/images/tecorbi-icon.png"
           alt="Tecorbi Icon"
           style={{
-            width: '26px',
-            height: '26px',
+            width: '24px',
+            height: '24px',
             objectFit: 'contain',
             filter: 'drop-shadow(0 0 6px rgba(147, 197, 253, 0.7))',
           }}
@@ -234,30 +241,30 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           src="/images/tecorbi-logo-white.png"
           alt="Tecorbi Logo"
           style={{
-            height: '22px',
+            height: '20px',
             objectFit: 'contain',
             filter: 'drop-shadow(0 0 10px rgba(59, 130, 246, 0.5))',
           }}
         />
       </div>
 
-      {/* Un-mute Prompt Button (Top Right as requested) */}
+      {/* Un-mute Prompt Button (Top Right) */}
       {!hasSound && (
         <button
           onClick={toggleSound}
           style={{
             position: 'fixed',
-            top: '24px',
-            right: '28px',
+            top: '20px',
+            right: '20px',
             zIndex: 100003,
-            padding: '9px 20px',
+            padding: '8px 18px',
             borderRadius: '9999px',
             border: '1px solid rgba(147, 197, 253, 0.45)',
             background: 'rgba(15, 23, 42, 0.85)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             color: '#93c5fd',
-            fontSize: '0.86rem',
+            fontSize: '0.84rem',
             fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
@@ -269,9 +276,47 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
             transition: 'all 0.25s ease',
           }}
         >
-          <span style={{ fontSize: '1.1rem' }}>🔊</span>
+          <span style={{ fontSize: '1.05rem' }}>🔊</span>
           <span>انقر لتشغيل الصوت</span>
         </button>
+      )}
+
+      {/* If iOS Low Power Mode blocks autoplay before user touch, show stylish neon tap prompt instead of ugly grey iOS play circle */}
+      {!isPlaying && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 100000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'transparent',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              padding: '12px 24px',
+              borderRadius: '9999px',
+              background: 'rgba(15, 23, 42, 0.75)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid rgba(96, 165, 250, 0.4)',
+              boxShadow: '0 0 30px rgba(37, 99, 235, 0.45)',
+              color: '#ffffff',
+              fontSize: '0.95rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              animation: 'pulse 1.8s ease-in-out infinite',
+            }}
+          >
+            <span style={{ fontSize: '1.2rem' }}>🎮</span>
+            <span>المس الشاشة للبدء</span>
+          </div>
+        </div>
       )}
 
       {/* Skip Button (Bottom Right) */}
@@ -279,17 +324,17 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         onClick={handleSkip}
         style={{
           position: 'fixed',
-          bottom: '28px',
-          right: '28px',
+          bottom: '24px',
+          right: '24px',
           zIndex: 100002,
-          padding: '10px 22px',
+          padding: '9px 20px',
           borderRadius: '9999px',
           border: '1px solid rgba(96, 165, 250, 0.45)',
           background: 'rgba(8, 14, 34, 0.8)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
           color: '#e2e8f0',
-          fontSize: '0.88rem',
+          fontSize: '0.86rem',
           fontWeight: 600,
           letterSpacing: '0.03em',
           cursor: 'pointer',
