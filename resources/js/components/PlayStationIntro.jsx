@@ -6,7 +6,7 @@ const DURATION_SECONDS = 6.125;
 
 const getFrameUrl = (index) => {
   const num = String(index).padStart(3, '0');
-  return `/intro-frames/frame_${num}.jpg`;
+  return `/intro-frames/frame_${num}.webp`;
 };
 
 export default function PlayStationIntro({ onComplete, onPlaySound }) {
