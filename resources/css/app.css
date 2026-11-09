@@ -5953,16 +5953,20 @@ html, body {
 
 /* Titles */
 .tecorbi-main-title {
-  font-size: 42px;
+  font-size: 40px;
   font-weight: 950;
-  letter-spacing: -0.8px;
+  letter-spacing: -0.5px;
   margin: 0 0 10px 0;
-  line-height: 1.15;
-  display: flex;
+  line-height: 1.2;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  flex-wrap: wrap;
+  direction: ltr !important;
+  unicode-bidi: isolate !important;
+  white-space: nowrap !important;
+  flex-wrap: nowrap !important;
+  text-align: center;
 }
 .title-indigo {
   color: #3925DE;
@@ -6183,8 +6187,12 @@ html, body {
 /* Mobile Responsive Optimizations */
 @media (max-width: 640px) {
   .tecorbi-main-title {
-    font-size: 28px;
-    gap: 6px;
+    font-size: 24px !important;
+    gap: 6px !important;
+    direction: ltr !important;
+    unicode-bidi: isolate !important;
+    white-space: nowrap !important;
+    flex-wrap: nowrap !important;
   }
   .tecorbi-robot-host-card {
     flex-direction: column;

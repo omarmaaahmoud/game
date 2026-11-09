@@ -482,8 +482,8 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
           </div>
         </div>
 
-        {/* Brand Headline */}
-        <h1 className="tecorbi-main-title">
+        {/* Brand Headline (Forced LTR so English reads Tecorbi Kids Arena on one line) */}
+        <h1 className="tecorbi-main-title" dir="ltr" style={{ direction: 'ltr' }}>
           <span className="title-indigo">Tecorbi</span>
           <span className="title-navy">Kids Arena</span>
           <span className="title-emoji">🎮</span>
