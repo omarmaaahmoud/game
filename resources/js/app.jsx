@@ -328,7 +328,12 @@ function App() {
   return (
     <div className="game-universe">
       {/* ── PlayStation 5 DualSense Intro Overlay ── */}
-      {showIntro && <PlayStationIntro onComplete={() => setShowIntro(false)} />}
+      {showIntro && (
+        <PlayStationIntro
+          onComplete={() => setShowIntro(false)}
+          onPlaySound={() => sfx.play('ps5-intro')}
+        />
+      )}
 
       <header className="game-navbar">
         <button className="navbar-brand" onClick={() => { sfx.play('click'); setMode('home'); }}>

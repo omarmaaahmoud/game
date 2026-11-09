@@ -7,11 +7,11 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const [overlayOpacity, setOverlayOpacity] = useState(1);
   const [isDone, setIsDone] = useState(false);
   const completedRef = useRef(false);
-  const soundPlayedRef = useRef(false);
+  const soundTriggeredRef = useRef(false);
 
   const triggerSound = useCallback(() => {
-    if (soundPlayedRef.current) return;
-    soundPlayedRef.current = true;
+    if (soundTriggeredRef.current) return;
+    soundTriggeredRef.current = true;
     try {
       if (onPlaySound) onPlaySound();
     } catch (e) {}
@@ -41,51 +41,35 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     v.setAttribute('muted', '');
     v.setAttribute('playsinline', '');
     v.setAttribute('webkit-playsinline', '');
-    v.setAttribute('autoplay', '');
 
-    const attemptPlay = () => {
-      v.play()
-        .then(() => {
-          triggerSound();
-        })
-        .catch(() => {
-          // Retry once canplay or user interaction happens
-          const onCanPlay = () => {
-            v.play().then(() => triggerSound()).catch(() => finishIntro());
-          };
-          v.addEventListener('canplay', onCanPlay, { once: true });
-        });
+    const playVideo = () => {
+      if (!v) return;
+      const promise = v.play();
+      if (promise !== undefined) {
+        promise
+          .then(() => {
+            triggerSound();
+          })
+          .catch((err) => {
+            // Autoplay waiting for interaction or buffer
+            console.log('Video autoplay deferred:', err);
+          });
+      }
     };
 
     if (v.readyState >= 2) {
-      attemptPlay();
+      playVideo();
     } else {
-      v.addEventListener('loadeddata', attemptPlay, { once: true });
-      v.addEventListener('canplay', attemptPlay, { once: true });
+      v.addEventListener('canplay', playVideo, { once: true });
+      v.addEventListener('loadeddata', playVideo, { once: true });
     }
 
-    // Fallback safety timer: in case video fails to decode or hangs, auto-finish after 14s
-    const safetyTimer = setTimeout(() => {
-      finishIntro();
-    }, 14000);
-
     return () => {
-      clearTimeout(safetyTimer);
       try {
         document.body.style.overflow = '';
       } catch (e) {}
     };
-  }, [finishIntro, triggerSound]);
-
-  // دالة لتخطي أول ثانية و 2 جزء من الثانية تلقائياً لتجنب أي بكسلة في البداية
-  const handleLoadedMetadata = () => {
-    const v = videoRef.current;
-    if (v) {
-      try {
-        v.currentTime = 1.2;
-      } catch (e) {}
-    }
-  };
+  }, [triggerSound]);
 
   const handleVideoTimeUpdate = () => {
     const v = videoRef.current;
@@ -97,10 +81,18 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     }
   };
 
+  const handleContainerClick = () => {
+    const v = videoRef.current;
+    if (v && v.paused) {
+      v.play().then(triggerSound).catch(() => {});
+    }
+  };
+
   if (isDone) return null;
 
   return (
     <div
+      onClick={handleContainerClick}
       style={{
         position: 'fixed',
         inset: 0,
@@ -110,20 +102,20 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         transition: 'opacity 140ms linear',
         backgroundColor: '#030511',
         overflow: 'hidden',
+        cursor: 'default',
       }}
       aria-label="PlayStation 5 DualSense Intro"
     >
       <video
         ref={videoRef}
-        src="/models/ps5-intro.mp4?v=8"
+        src="/models/ps5-intro.mp4"
         autoPlay
         muted
         playsInline
         preload="auto"
-        onLoadedMetadata={handleLoadedMetadata}
         onTimeUpdate={handleVideoTimeUpdate}
         onEnded={finishIntro}
-        onError={() => finishIntro()}
+        onPlaying={triggerSound}
         style={{
           width: '100vw',
           height: '100vh',
@@ -136,12 +128,15 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           left: 0,
         }}
       >
-        <source src="/models/ps5-intro.mp4?v=8" type="video/mp4" />
-        <source src="/models/ps5-intro.webm?v=8" type="video/webm" />
+        <source src="/models/ps5-intro.mp4" type="video/mp4" />
+        <source src="/models/ps5-intro.webm" type="video/webm" />
       </video>
 
       <button
-        onClick={finishIntro}
+        onClick={(e) => {
+          e.stopPropagation();
+          finishIntro();
+        }}
         style={{
           position: 'fixed',
           bottom: '28px',
