@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 
-const FRAME_COUNT = 192;
-const DURATION_SECONDS = 8.0;
+const FRAME_COUNT = 147;
+const DURATION_SECONDS = 6.125;
 
 const getFrameUrl = (index) => {
   const num = String(index).padStart(3, '0');
