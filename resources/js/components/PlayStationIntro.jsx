@@ -131,10 +131,10 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       finishIntro();
     };
 
-    // Safety timeout: 4.0s video, finishes at 4.6s if not already ended
+    // Safety timeout: 7.65s video, finishes at 8.2s if not already ended
     const safetyTimer = setTimeout(() => {
       finishIntro();
-    }, 4600);
+    }, 8200);
 
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleError);
