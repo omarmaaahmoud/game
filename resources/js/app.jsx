@@ -408,9 +408,6 @@ function App() {
         <footer className="game-footer">
           <div className="footer-content">
             <span>✨ Tecorbi Kids Arena · صُمم لتعليم ممتع وتفاعلي للأبطال</span>
-            <button className="footer-link-mobile" onClick={copyMobileLink}>
-              <Smartphone size={14} /> رابط الموبايل: {getMobileUrl()} (اضغط للنسخ)
-            </button>
           </div>
         </footer>
       )}
@@ -479,8 +476,8 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
             </div>
           </div>
           <h1 className="space-hero-title">
-            <span>مغامرة الفضاء</span>
-            <span>والعلوم 🚀</span>
+            <span>Tecorbi</span>
+            <span>Game 🎮</span>
           </h1>
           <p className="space-hero-teacher">
             اكتب الكود المكوّن من 6 أرقام المعروض على شاشة المعلم
@@ -518,34 +515,10 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
           className="btn-3d btn-primary-giant"
           onClick={() => checkAndProceed(pin)}
           disabled={loading || pin.length !== 6}
-          style={{ width: '100%', marginBottom: '16px' }}
+          style={{ width: '100%', marginBottom: '0' }}
         >
           {loading ? 'جاري التحقق...' : <><ArrowRight size={22} /> انطلق إلى المسابقة 🚀</>}
         </button>
-
-        {/* Quick Demo Launch Shortcut */}
-        <div className="quick-demo-shortcut">
-          <button
-            type="button"
-            className="btn-demo-quick-tag"
-            onClick={() => {
-              setPin('123456');
-              checkAndProceed('123456');
-            }}
-          >
-            <Sparkles size={16} /> تجربة المسابقة الجاهزة الآن (كود 123456) ✨
-          </button>
-        </div>
-
-        {/* Mobile Info Pill */}
-        <div className="mobile-access-box" onClick={copyMobileLink}>
-          <Smartphone size={20} className="phone-icon-pulse" />
-          <div className="mab-text">
-            <span>رابط الدخول من هواتف الطلاب:</span>
-            <strong>{getMobileUrl()}</strong>
-          </div>
-          <Copy size={16} className="mab-copy" />
-        </div>
       </div>
     </main>
   );
@@ -991,8 +964,8 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
         {/* Center Arabic Title & Teacher */}
         <div className="space-hero-content">
           <h1 className="space-hero-title">
-            <span>مغامرة الفضاء</span>
-            <span>والعلوم 🚀</span>
+            <span>Tecorbi</span>
+            <span>Game 🎮</span>
           </h1>
           <p className="space-hero-teacher">
             بقيادة المعلم: <strong>{session.teacher_name || 'الأستاذ أحمد'}</strong>
@@ -2153,7 +2126,7 @@ function Leaderboard({ session, setMode, player }) {
     try {
       const pollData = await get(`/sessions/${pin}/poll`);
       setResults({
-        title: session?.title || pollData?.title || 'مغامرة الفضاء والعلوم 🚀',
+        title: session?.title || pollData?.title || 'Tecorbi Game 🎮',
         total_questions: pollData?.total_questions || 3,
         total_players: pollData?.player_count || 3,
         results: []

@@ -16,7 +16,7 @@ class DatabaseSeeder extends Seeder
             ['pin' => '123456'],
             [
                 'teacher_name' => 'الأستاذ أحمد',
-                'title' => 'مغامرة الفضاء والعلوم 🚀',
+                'title' => 'Tecorbi Game 🎮',
                 'status' => 'waiting',
                 'current_question_index' => 0,
             ]
