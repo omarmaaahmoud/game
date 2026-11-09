@@ -127,165 +127,171 @@ const SHAPES = [
   { symbol: '■', color: 'green', name: 'D' },
 ];
 
-/* ══════════════════════ 3D SPACE ILLUSTRATIONS ══════════════════════ */
-function SpacePlanet3D({ className = '', style = {} }) {
+/* ══════════════════════ TECORBI OFFICIAL BRAND ILLUSTRATIONS ══════════════════════ */
+
+/* Official Tecorbi Robot Mascot (From Workbook: Friendly, White/Indigo, Smiling Green Visor Eyes, Waving) */
+function TecorbiRobot3D({ className = '', style = {} }) {
   return (
-    <div className={`space-planet-3d ${className}`} style={style} aria-hidden="true">
-      <svg viewBox="0 0 160 160" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <div className={`tecorbi-robot-container ${className}`} style={{ width: '100%', height: '100%', ...style }} aria-hidden="true">
+      <svg viewBox="0 0 160 170" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <radialGradient id="planetGlowGrad" cx="30%" cy="28%" r="72%">
-            <stop offset="0%" stopColor="#d8b4fe" />
-            <stop offset="28%" stopColor="#9333ea" />
-            <stop offset="65%" stopColor="#581c87" />
-            <stop offset="100%" stopColor="#1e0a3d" />
-          </radialGradient>
-          <filter id="planetHalo" x="-25%" y="-25%" width="150%" height="150%">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="8" />
-            <feOffset dx="-2" dy="-2" result="offsetblur" />
-            <feFlood floodColor="#a855f7" floodOpacity="0.75" />
-            <feComposite in2="offsetblur" operator="in" />
-            <feMerge>
-              <feMergeNode />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <radialGradient id="craterDeep" cx="35%" cy="35%" r="65%">
-            <stop offset="0%" stopColor="#2e1065" />
-            <stop offset="85%" stopColor="#1e0a3d" />
-            <stop offset="100%" stopColor="#7e22ce" />
-          </radialGradient>
-        </defs>
-        
-        {/* Ambient atmospheric purple glow */}
-        <circle cx="80" cy="80" r="74" fill="rgba(168, 85, 247, 0.25)" filter="url(#planetHalo)" />
-
-        {/* Planet Sphere */}
-        <circle cx="80" cy="80" r="70" fill="url(#planetGlowGrad)" />
-        
-        {/* Specular curved reflection */}
-        <ellipse cx="62" cy="52" rx="36" ry="22" fill="#ffffff" fillOpacity="0.14" transform="rotate(-25 62 52)" />
-        
-        {/* Large Crater */}
-        <g transform="translate(44, 58)">
-          <ellipse cx="18" cy="20" rx="16" ry="18" fill="url(#craterDeep)" />
-          <ellipse cx="18" cy="20" rx="16" ry="18" stroke="rgba(216, 180, 254, 0.45)" strokeWidth="2.5" fill="none" />
-          <ellipse cx="15" cy="18" rx="10" ry="11" fill="#150529" opacity="0.8" />
-          <ellipse cx="20" cy="22" rx="6" ry="7" fill="#7e22ce" opacity="0.4" />
-        </g>
-        
-        {/* Top-Right Crater */}
-        <g transform="translate(86, 28)">
-          <ellipse cx="12" cy="14" rx="11" ry="13" fill="url(#craterDeep)" />
-          <ellipse cx="12" cy="14" rx="11" ry="13" stroke="rgba(192, 132, 252, 0.5)" strokeWidth="2" fill="none" />
-          <ellipse cx="10" cy="12" rx="6" ry="8" fill="#150529" opacity="0.75" />
-        </g>
-        
-        {/* Bottom Crater */}
-        <g transform="translate(78, 104)">
-          <ellipse cx="14" cy="12" rx="14" ry="10" fill="url(#craterDeep)" />
-          <ellipse cx="14" cy="12" rx="14" ry="10" stroke="rgba(168, 85, 247, 0.4)" strokeWidth="1.8" fill="none" />
-          <ellipse cx="12" cy="11" rx="8" ry="6" fill="#150529" opacity="0.7" />
-        </g>
-
-        {/* Craters near rim */}
-        <circle cx="42" cy="112" r="5" fill="#2e1065" stroke="rgba(192, 132, 252, 0.3)" strokeWidth="1" />
-        <circle cx="124" cy="74" r="6" fill="#1e0a3d" stroke="rgba(168, 85, 247, 0.35)" strokeWidth="1" />
-        <circle cx="112" cy="98" r="4" fill="#2e1065" />
-      </svg>
-    </div>
-  );
-}
-
-function SpaceRocket3D({ className = '', style = {} }) {
-  return (
-    <div className={`space-rocket-3d ${className}`} style={style} aria-hidden="true">
-      <svg viewBox="0 0 170 190" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="rocketBodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#ffffff" />
-            <stop offset="45%" stopColor="#f1f5f9" />
-            <stop offset="80%" stopColor="#cbd5e1" />
-            <stop offset="100%" stopColor="#94a3b8" />
+          <linearGradient id="robotWhiteGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="60%" stopColor="#F1F4FD" />
+            <stop offset="100%" stopColor="#DCE4FA" />
           </linearGradient>
-          <linearGradient id="rocketRedGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#fb7185" />
-            <stop offset="50%" stopColor="#f43f5e" />
-            <stop offset="100%" stopColor="#be123c" />
+          <linearGradient id="robotIndigoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#4F3DF5" />
+            <stop offset="100%" stopColor="#2E1CB8" />
           </linearGradient>
-          <linearGradient id="rocketGlassGrad" x1="15%" y1="15%" x2="90%" y2="90%">
-            <stop offset="0%" stopColor="#a5f3fc" />
-            <stop offset="45%" stopColor="#38bdf8" />
-            <stop offset="100%" stopColor="#0369a1" />
+          <linearGradient id="robotLimeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#D6FB68" />
+            <stop offset="100%" stopColor="#A8D635" />
           </linearGradient>
-          <linearGradient id="thrusterFireGrad" x1="50%" y1="0%" x2="50%" y2="100%">
-            <stop offset="0%" stopColor="#ffffff" />
-            <stop offset="25%" stopColor="#fef08a" />
-            <stop offset="55%" stopColor="#f97316" />
-            <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
-          </linearGradient>
-          <filter id="rocketFireGlow" x="-35%" y="-35%" width="170%" height="170%">
-            <feGaussianBlur stdDeviation="6" result="glow" />
-            <feMerge>
-              <feMergeNode in="glow" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
+          <filter id="robotGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#3925DE" floodOpacity="0.25" />
           </filter>
         </defs>
 
-        <g transform="rotate(24 85 95)">
-          {/* Cosmic smoke cloud puffs */}
-          <ellipse cx="62" cy="148" rx="18" ry="12" fill="#c084fc" fillOpacity="0.35" filter="blur(6px)" />
-          <ellipse cx="106" cy="150" rx="19" ry="13" fill="#e879f9" fillOpacity="0.3" filter="blur(6px)" />
-          <ellipse cx="84" cy="158" rx="22" ry="14" fill="#ddd6fe" fillOpacity="0.25" filter="blur(7px)" />
+        <g filter="url(#robotGlow)">
+          {/* Head Antennas */}
+          <line x1="80" y1="28" x2="80" y2="14" stroke="#3925DE" strokeWidth="4" strokeLinecap="round" />
+          <circle cx="80" cy="12" r="5" fill="url(#robotLimeGrad)" />
+          <circle cx="48" cy="22" r="4" fill="#3925DE" />
+          <line x1="56" y1="32" x2="48" y2="22" stroke="#3925DE" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="112" cy="22" r="4" fill="#3925DE" />
+          <line x1="104" y1="32" x2="112" y2="22" stroke="#3925DE" strokeWidth="3" strokeLinecap="round" />
 
-          {/* Engine Exhaust Flame (Animated) */}
-          <g className="engine-flame-pulsing">
-            <path d="M72 126 C72 158, 84 182, 84 182 C84 182, 96 158, 96 126 Z" fill="url(#thrusterFireGrad)" filter="url(#rocketFireGlow)" />
-            <path d="M77 126 C77 148, 84 165, 84 165 C84 165, 91 148, 91 126 Z" fill="#ffffff" />
+          {/* Robot Head Chassis */}
+          <rect x="42" y="26" width="76" height="56" rx="24" fill="url(#robotWhiteGrad)" stroke="#3925DE" strokeWidth="3" />
+
+          {/* Digital Black Screen Visor */}
+          <rect x="49" y="33" width="62" height="38" rx="14" fill="#08102B" />
+
+          {/* Smiling Green Visor Eyes (^ ^) */}
+          <path d="M57 56 C57 48, 67 48, 67 56" stroke="#C3F53C" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <path d="M79 56 C79 48, 89 48, 89 56" stroke="#C3F53C" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          {/* Cute Digital Mouth */}
+          <path d="M70 63 Q73 66 76 63" stroke="#C3F53C" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+
+          {/* Left Arm (Resting) */}
+          <g>
+            <circle cx="34" cy="94" r="7" fill="#3925DE" />
+            <path d="M34 94 Q24 108 26 124" stroke="url(#robotWhiteGrad)" strokeWidth="9" strokeLinecap="round" />
+            <circle cx="26" cy="124" r="6" fill="#3925DE" />
           </g>
 
-          {/* Left Wing / Fin */}
-          <path d="M60 92 C46 106, 42 126, 44 130 C52 130, 68 120, 70 114 Z" fill="url(#rocketRedGrad)" />
-          {/* Right Wing / Fin */}
-          <path d="M108 92 C122 106, 126 126, 124 130 C116 130, 100 120, 98 114 Z" fill="url(#rocketRedGrad)" />
+          {/* Body Torso */}
+          <rect x="52" y="86" width="56" height="54" rx="18" fill="url(#robotWhiteGrad)" stroke="#3925DE" strokeWidth="3" />
 
-          {/* Engine Base / Nozzle */}
-          <path d="M72 120 L96 120 L92 128 L76 128 Z" fill="#334155" />
+          {/* Chest Plate with Tecorbi Emblem */}
+          <rect x="60" y="94" width="40" height="28" rx="8" fill="#F1F4FD" stroke="rgba(57, 37, 222, 0.3)" strokeWidth="1.5" />
+          {/* Curved Tecorbi Emblem Shape */}
+          <path d="M70 102 C66 106, 66 114, 73 115 C80 115, 84 109, 88 104" stroke="#3925DE" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+          <circle cx="85" cy="103" r="3" fill="#C3F53C" />
 
-          {/* Main Fuselage */}
-          <path d="M84 18 C67 44, 61 78, 65 120 C73 122, 95 122, 103 120 C107 78, 101 44, 84 18 Z" fill="url(#rocketBodyGrad)" />
+          {/* Legs */}
+          <rect x="58" y="138" width="16" height="20" rx="7" fill="url(#robotWhiteGrad)" stroke="#3925DE" strokeWidth="2.5" />
+          <rect x="86" y="138" width="16" height="20" rx="7" fill="url(#robotWhiteGrad)" stroke="#3925DE" strokeWidth="2.5" />
+          <ellipse cx="66" cy="158" rx="12" ry="6" fill="#08102B" />
+          <ellipse cx="94" cy="158" rx="12" ry="6" fill="#08102B" />
 
-          {/* Red Nose Cone */}
-          <path d="M84 18 C77 32, 72 46, 70 56 C78 58, 90 58, 98 56 C96 46, 91 32, 84 18 Z" fill="url(#rocketRedGrad)" />
-
-          {/* Cockpit Window Rim */}
-          <circle cx="84" cy="74" r="16" fill="#1e293b" />
-          <circle cx="84" cy="74" r="13" fill="#e2e8f0" />
-          {/* Cockpit Glass Visor */}
-          <circle cx="84" cy="74" r="11" fill="url(#rocketGlassGrad)" />
-          {/* Specular Visor Highlight */}
-          <ellipse cx="81" cy="70" rx="4" ry="2.5" fill="#ffffff" fillOpacity="0.85" transform="rotate(-30 81 70)" />
-
-          {/* Center Spine Fin */}
-          <path d="M83 88 L85 88 L86 121 L82 121 Z" fill="url(#rocketRedGrad)" opacity="0.9" />
+          {/* Right Arm (Waving Cheerfully) */}
+          <g className="robot-waving-arm">
+            <circle cx="126" cy="94" r="7" fill="#3925DE" />
+            <path d="M126 94 Q142 82 144 64" stroke="url(#robotWhiteGrad)" strokeWidth="9" strokeLinecap="round" />
+            <circle cx="144" cy="64" r="7" fill="#3925DE" />
+            {/* Waving Fingers */}
+            <path d="M140 58 Q144 52 148 58" stroke="#C3F53C" strokeWidth="3" strokeLinecap="round" fill="none" />
+          </g>
         </g>
       </svg>
     </div>
   );
 }
 
+/* Educational Electronics Gadget (Inspired by 9V Battery & Snap Connector from Workbook) */
+function TecorbiCircuit3D({ className = '', style = {} }) {
+  return (
+    <div className={`tecorbi-circuit-gadget ${className}`} style={{ width: '100%', height: '100%', ...style }} aria-hidden="true">
+      <svg viewBox="0 0 160 160" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="batteryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3925DE" />
+            <stop offset="100%" stopColor="#1E1088" />
+          </linearGradient>
+          <linearGradient id="snapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3B82F6" />
+            <stop offset="100%" stopColor="#1D4ED8" />
+          </linearGradient>
+          <filter id="circuitGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#3925DE" floodOpacity="0.2" />
+          </filter>
+        </defs>
+
+        <g filter="url(#circuitGlow)" transform="translate(10, 10)">
+          {/* Base Electronic PCB Tile */}
+          <rect x="15" y="25" width="110" height="95" rx="20" fill="#FFFFFF" stroke="rgba(57, 37, 222, 0.25)" strokeWidth="2.5" />
+          
+          {/* PCB Copper Tracks */}
+          <path d="M28 45 L50 45 L65 60 L105 60" stroke="#3925DE" strokeWidth="3" strokeLinecap="round" />
+          <path d="M35 95 L55 95 L70 80 L110 80" stroke="#C3F53C" strokeWidth="3.5" strokeLinecap="round" />
+
+          {/* Solder Nodes */}
+          <circle cx="28" cy="45" r="5" fill="#3925DE" stroke="#FFFFFF" strokeWidth="2" />
+          <circle cx="105" cy="60" r="5" fill="#C3F53C" stroke="#3925DE" strokeWidth="2" />
+          <circle cx="35" cy="95" r="5" fill="#C3F53C" stroke="#08102B" strokeWidth="2" />
+          <circle cx="110" cy="80" r="5" fill="#3925DE" stroke="#FFFFFF" strokeWidth="2" />
+
+          {/* Snap Connector Block (Blue bar from workbook) */}
+          <g transform="translate(30, 48) rotate(12)">
+            <rect x="0" y="0" width="70" height="24" rx="12" fill="url(#snapGrad)" />
+            {/* Snap Terminals */}
+            <circle cx="12" cy="12" r="7" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
+            <circle cx="12" cy="12" r="3" fill="#3925DE" />
+            <circle cx="58" cy="12" r="7" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
+            <circle cx="58" cy="12" r="3" fill="#3925DE" />
+          </g>
+
+          {/* 9V Power Badge */}
+          <rect x="42" y="104" width="56" height="20" rx="10" fill="#C3F53C" />
+          <text x="70" y="118" textAnchor="middle" fill="#08102B" fontSize="11" fontWeight="900" fontFamily="sans-serif">⚡ 9V POWER</text>
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+/* Authentic Electronic Circuit Tracks (Top-Right & Bottom-Left PCB Traces) */
 function CosmicDecorations() {
   return (
-    <div className="cosmic-decorations-layer" aria-hidden="true">
-      <div className="cosmic-nebula-orb orb-left" />
-      <div className="cosmic-nebula-orb orb-right" />
-      <div className="cosmic-nebula-orb orb-bottom" />
-      <span className="cosmic-sparkle-star star-1">✦</span>
-      <span className="cosmic-sparkle-star star-2">✦</span>
-      <span className="cosmic-sparkle-star star-3">✦</span>
-      <span className="cosmic-sparkle-star star-4">✦</span>
-      <span className="cosmic-sparkle-star star-5">★</span>
-      <span className="cosmic-sparkle-star star-6">✦</span>
+    <div className="circuit-decorations-layer" aria-hidden="true">
+      {/* Top Right Corner Electronic Circuits (Like the workbook header) */}
+      <svg className="circuit-svg-corner-tr" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M120 0 L120 40 L160 80 L320 80" stroke="#3925DE" strokeWidth="2.5" strokeLinecap="round" opacity="0.35" />
+        <path d="M180 0 L180 30 L220 70 L320 70" stroke="#C3F53C" strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
+        <path d="M60 0 L60 60 L110 110 L320 110" stroke="#3925DE" strokeWidth="2" strokeLinecap="round" opacity="0.25" />
+        
+        {/* Solder Nodes */}
+        <circle cx="160" cy="80" r="5" fill="#3925DE" opacity="0.6" className="circuit-pulse-node" />
+        <circle cx="220" cy="70" r="4.5" fill="#C3F53C" className="circuit-pulse-node" />
+        <circle cx="110" cy="110" r="4" fill="#3925DE" opacity="0.5" />
+        <circle cx="280" cy="80" r="3.5" fill="#3925DE" opacity="0.7" />
+        <circle cx="260" cy="70" r="3.5" fill="#C3F53C" />
+      </svg>
+
+      {/* Bottom Left Corner Electronic Circuits */}
+      <svg className="circuit-svg-corner-bl" viewBox="0 0 300 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0 160 L110 160 L160 110 L160 0" stroke="#3925DE" strokeWidth="2.5" strokeLinecap="round" opacity="0.35" />
+        <path d="M0 190 L90 190 L140 140 L140 0" stroke="#C3F53C" strokeWidth="2.5" strokeLinecap="round" opacity="0.55" />
+        <path d="M0 120 L70 120 L120 70 L120 0" stroke="#3925DE" strokeWidth="2" strokeLinecap="round" opacity="0.25" />
+
+        {/* Solder Nodes */}
+        <circle cx="110" cy="160" r="5" fill="#3925DE" opacity="0.6" />
+        <circle cx="140" cy="140" r="4.5" fill="#C3F53C" className="circuit-pulse-node" />
+        <circle cx="70" cy="120" r="4" fill="#3925DE" opacity="0.5" />
+        <circle cx="160" cy="70" r="3.5" fill="#3925DE" opacity="0.7" />
+      </svg>
     </div>
   );
 }
@@ -335,14 +341,15 @@ function App() {
         />
       )}
 
+      {/* ── Official Tecorbi Kids Arena Header ── */}
       <header className="game-navbar">
         <button className="navbar-brand" onClick={() => { sfx.play('click'); setMode('home'); }}>
           <div className="brand-logo-disc">
-            <GraduationCap size={28} strokeWidth={2.5} />
+            <img src="/images/tecorbi-icon.png" alt="Tecorbi Icon" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
           </div>
           <div className="brand-text">
             <span className="brand-title">Tecorbi</span>
-            <span className="brand-sub">Kids Arena 🎮</span>
+            <span className="brand-sub">Kids Arena 🚀</span>
           </div>
         </button>
 
@@ -460,43 +467,43 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
     <main className="space-lobby-view student-home-space-view">
       <CosmicDecorations />
 
-      {/* Hero Section: 3D Planet + Arabic Headline + 3D Rocket */}
+      {/* Hero Section: Official Waving Robot + Tecorbi Title + Smart Electronics Gadget */}
       <div className="space-hero-section">
-        {/* Left Planet */}
-        <div className="space-planet-anchor">
-          <SpacePlanet3D />
+        {/* Left: Official Waving Tecorbi Robot Mascot */}
+        <div className="space-planet-anchor" title="Tecorbi Robot Mascot">
+          <TecorbiRobot3D />
         </div>
 
-        {/* Center Title */}
+        {/* Center: Educational Gaming Title */}
         <div className="space-hero-content">
           <div className="space-live-pill-row" style={{ justifyContent: 'center', marginBottom: '14px' }}>
             <div className="space-live-pill">
-              <Sparkles size={14} className="text-yellow-400" />
-              <span>ساحة التحديات المدرسية للأبطال</span>
+              <Zap size={14} />
+              <span>ساحة التحديات التعليمية الذكية للأبطال</span>
             </div>
           </div>
-          <h1 className="space-hero-title">
-            <span>Tecorbi</span>
-            <span>Game 🎮</span>
+          <h1 className="space-hero-title hero-title-tecorbi">
+            <span style={{ color: '#3925DE' }}>Tecorbi</span>
+            <span style={{ color: '#08102B' }}>Kids Arena 🎮</span>
           </h1>
-          <p className="space-hero-teacher">
-            اكتب الكود المكوّن من 6 أرقام المعروض على شاشة المعلم
+          <p className="space-hero-teacher hero-subtitle-tecorbi">
+            اكتب كود المسابقة المكوّن من 6 أرقام المعروض على شاشة المعلم وابدأ التحدي ⚡
           </p>
         </div>
 
-        {/* Right Rocket */}
-        <div className="space-rocket-anchor">
-          <SpaceRocket3D />
+        {/* Right: Educational Electronics Gadget (Workbook style) */}
+        <div className="space-rocket-anchor" title="Tecorbi Educational Circuit">
+          <TecorbiCircuit3D />
         </div>
       </div>
 
-      {/* Game PIN Translucent Glass Card */}
+      {/* Game PIN Translucent Clean White Card with Electric Indigo Border */}
       <div className="space-pin-glass-card student-pin-card-wrapper">
         <div className="spgc-header">
           <div className="spgc-gamepad-disc">
             <Gamepad2 size={24} />
           </div>
-          <span className="spgc-title">(GAME PIN) كود انضمام الطلاب</span>
+          <span className="spgc-title">(GAME PIN) كود انضمام الطلاب للمسابقة</span>
         </div>
 
         <div className="pin-input-giant-wrapper">
@@ -519,6 +526,19 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
         >
           {loading ? 'جاري التحقق...' : <><ArrowRight size={22} /> انطلق إلى المسابقة 🚀</>}
         </button>
+
+        {/* Friendly Quick Demo Helper */}
+        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="tecorbi-tag-lime"
+            onClick={() => setPin('123456')}
+            style={{ cursor: 'pointer', border: 'none' }}
+            title="انقر لتعبئة الكود التجريبي تلقائياً"
+          >
+            ⚡ تجربة سريعة: الكود 123456 متاح دائماً
+          </button>
+        </div>
       </div>
     </main>
   );
