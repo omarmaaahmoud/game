@@ -6,7 +6,6 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const videoRef = useRef(null);
   const [overlayOpacity, setOverlayOpacity] = useState(1);
   const [isDone, setIsDone] = useState(false);
-  const [needsTap, setNeedsTap] = useState(false);
   const completedRef = useRef(false);
   const soundPlayedRef = useRef(false);
 
@@ -42,21 +41,27 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     v.setAttribute('muted', '');
     v.setAttribute('playsinline', '');
     v.setAttribute('webkit-playsinline', '');
+    v.setAttribute('autoplay', '');
 
-    const attemptPlay = async () => {
-      try {
-        await v.play();
-        setNeedsTap(false);
-        triggerSound();
-      } catch (err) {
-        setNeedsTap(true);
-      }
+    const attemptPlay = () => {
+      v.play()
+        .then(() => {
+          triggerSound();
+        })
+        .catch(() => {
+          // Retry once canplay or user interaction happens
+          const onCanPlay = () => {
+            v.play().then(() => triggerSound()).catch(() => finishIntro());
+          };
+          v.addEventListener('canplay', onCanPlay, { once: true });
+        });
     };
 
     if (v.readyState >= 2) {
       attemptPlay();
     } else {
       v.addEventListener('loadeddata', attemptPlay, { once: true });
+      v.addEventListener('canplay', attemptPlay, { once: true });
     }
 
     // Fallback safety timer: in case video fails to decode or hangs, auto-finish after 14s
@@ -70,7 +75,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         document.body.style.overflow = '';
       } catch (e) {}
     };
-  }, [finishIntro]);
+  }, [finishIntro, triggerSound]);
 
   // دالة لتخطي أول ثانية و 2 جزء من الثانية تلقائياً لتجنب أي بكسلة في البداية
   const handleLoadedMetadata = () => {
@@ -80,16 +85,6 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         v.currentTime = 1.2;
       } catch (e) {}
     }
-  };
-
-  const handleManualPlay = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.muted = true;
-    triggerSound();
-    v.play()
-      .then(() => setNeedsTap(false))
-      .catch(() => finishIntro());
   };
 
   const handleVideoTimeUpdate = () => {
@@ -120,7 +115,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     >
       <video
         ref={videoRef}
-        src="/models/ps5-intro.mp4?v=7"
+        src="/models/ps5-intro.mp4?v=8"
         autoPlay
         muted
         playsInline
@@ -141,42 +136,9 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           left: 0,
         }}
       >
-        <source src="/models/ps5-intro.mp4?v=7" type="video/mp4" />
-        <source src="/models/ps5-intro.webm?v=7" type="video/webm" />
+        <source src="/models/ps5-intro.mp4?v=8" type="video/mp4" />
+        <source src="/models/ps5-intro.webm?v=8" type="video/webm" />
       </video>
-
-      {needsTap && (
-        <div
-          onClick={handleManualPlay}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 100001,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(3, 5, 17, 0.75)',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          <div
-            style={{
-              padding: '14px 28px',
-              borderRadius: '9999px',
-              background: 'linear-gradient(90deg, #2563eb, #7c3aed)',
-              fontWeight: 700,
-              fontSize: '1rem',
-              boxShadow: '0 0 25px rgba(59, 130, 246, 0.6)',
-              fontFamily: 'system-ui, sans-serif',
-              letterSpacing: '0.02em',
-            }}
-          >
-            اضغط للبدء ✦ Tap to Play
-          </div>
-        </div>
-      )}
 
       <button
         onClick={finishIntro}
@@ -206,4 +168,3 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     </div>
   );
 }
-

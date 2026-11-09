@@ -82,3 +82,4 @@ const indexHtmlContent = `<!doctype html>
 
 fs.writeFileSync(path.join(distDir, 'index.html'), indexHtmlContent, 'utf-8');
 console.log('✓ Successfully prepared dist/ for Vercel deployment with index.html, assets, and 3D models.');
+

@@ -79,24 +79,6 @@ const sfx = {
           o.start(t + i * 0.12);
           o.stop(t + 1.2);
         });
-      } else if (type === 'ps5-intro') {
-        // PlayStation iconic atmospheric chord: deep sub-bass + cosmic rising shimmer
-        const freqs = [65.41, 130.81, 196.0, 261.63, 329.63, 392.0, 523.25];
-        freqs.forEach((freq, idx) => {
-          const o = this.ctx.createOscillator();
-          const g = this.ctx.createGain();
-          o.type = idx === 0 ? 'sine' : (idx % 2 === 0 ? 'triangle' : 'sine');
-          o.frequency.setValueAtTime(freq, t);
-          o.frequency.exponentialRampToValueAtTime(freq * 1.003, t + 2.5);
-          o.connect(g);
-          g.connect(this.ctx.destination);
-          const vol = idx === 0 ? 0.22 : 0.07;
-          g.gain.setValueAtTime(0.0001, t);
-          g.gain.linearRampToValueAtTime(vol, t + 0.35 + idx * 0.08);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + 3.8);
-          o.start(t);
-          o.stop(t + 4.0);
-        });
       }
     } catch (e) {}
   }
@@ -346,12 +328,7 @@ function App() {
   return (
     <div className="game-universe">
       {/* ── PlayStation 5 DualSense Intro Overlay ── */}
-      {showIntro && (
-        <PlayStationIntro
-          onComplete={() => setShowIntro(false)}
-          onPlaySound={() => sfx.play('ps5-intro')}
-        />
-      )}
+      {showIntro && <PlayStationIntro onComplete={() => setShowIntro(false)} />}
 
       <header className="game-navbar">
         <button className="navbar-brand" onClick={() => { sfx.play('click'); setMode('home'); }}>
