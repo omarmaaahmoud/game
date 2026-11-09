@@ -46,22 +46,6 @@ if (fs.existsSync(modelsDir)) {
   fs.cpSync(modelsDir, path.join(distDir, 'models'), { recursive: true });
 }
 
-// 4b. Copy public/intro-frames to dist/intro-frames
-const introFramesDir = path.join(publicDir, 'intro-frames');
-if (fs.existsSync(introFramesDir)) {
-  fs.cpSync(introFramesDir, path.join(distDir, 'intro-frames'), { recursive: true });
-}
-
-// 5. Copy any other public static files (ignoring build & index.php)
-fs.readdirSync(publicDir).forEach((item) => {
-  if (item !== 'build' && item !== 'index.php' && item !== 'models') {
-    const src = path.join(publicDir, item);
-    const dest = path.join(distDir, item);
-    if (!fs.existsSync(dest)) {
-      fs.cpSync(src, dest, { recursive: true });
-    }
-  }
-});
 
 // 6. Generate dist/index.html
 const indexHtmlContent = `<!doctype html>
