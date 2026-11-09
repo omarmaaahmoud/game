@@ -6,6 +6,8 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const videoRef = useRef(null);
   const [isDone, setIsDone] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
   const completedRef = useRef(false);
 
   // Complete & Clean up Intro
@@ -50,13 +52,18 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     finishIntro();
   };
 
-  // Unmute audio on user interaction
-  const unmuteAudio = useCallback(() => {
+  // Unmute audio and ensure playing on user interaction
+  const handleInteraction = useCallback(() => {
     const video = videoRef.current;
-    if (video && video.muted) {
+    if (video) {
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
       video.muted = false;
       video.volume = 1.0;
       setIsMuted(false);
+      setIsBlocked(false);
+      setIsPlaying(true);
     }
   }, []);
 
@@ -67,41 +74,52 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
 
     const video = videoRef.current;
     if (video) {
-      // Force muted and playsInline for guaranteed mobile/desktop autoplay
-      video.muted = true;
+      // Force DOM properties for guaranteed mobile/desktop autoplay
       video.defaultMuted = true;
-      video.playsInline = true;
+      video.muted = true;
+      video.setAttribute('muted', '');
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.setAttribute('x5-playsinline', '');
 
-      const playPromise = video.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(() => {
-          // Retry playback on first user touch if browser still blocks
-          const onFirstGesture = () => {
-            video.play().catch(() => {});
-            window.removeEventListener('touchstart', onFirstGesture);
-            window.removeEventListener('click', onFirstGesture);
-          };
-          window.addEventListener('touchstart', onFirstGesture, { once: true, passive: true });
-          window.addEventListener('click', onFirstGesture, { once: true });
-        });
+      const tryPlay = () => {
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setIsPlaying(true);
+              setIsBlocked(false);
+            })
+            .catch(() => {
+              // Browser blocked muted autoplay (e.g. power saving mode)
+              setIsBlocked(true);
+            });
+        }
+      };
+
+      if (video.readyState >= 2) {
+        tryPlay();
+      } else {
+        video.addEventListener('canplay', tryPlay, { once: true });
+        video.addEventListener('loadeddata', tryPlay, { once: true });
       }
     }
 
-    // Auto-unmute on first user touch/tap anywhere on screen
-    const handleFirstTouch = () => {
-      unmuteAudio();
+    // Auto-unmute and play on first user tap/touch anywhere on screen
+    const onUserGesture = () => {
+      handleInteraction();
     };
 
-    window.addEventListener('pointerdown', handleFirstTouch, { once: true });
-    window.addEventListener('touchstart', handleFirstTouch, { once: true, passive: true });
-    window.addEventListener('click', handleFirstTouch, { once: true });
-    window.addEventListener('keydown', handleFirstTouch, { once: true });
+    window.addEventListener('pointerdown', onUserGesture, { once: true });
+    window.addEventListener('touchstart', onUserGesture, { once: true, passive: true });
+    window.addEventListener('click', onUserGesture, { once: true });
+    window.addEventListener('keydown', onUserGesture, { once: true });
 
     return () => {
-      window.removeEventListener('pointerdown', handleFirstTouch);
-      window.removeEventListener('touchstart', handleFirstTouch);
-      window.removeEventListener('click', handleFirstTouch);
-      window.removeEventListener('keydown', handleFirstTouch);
+      window.removeEventListener('pointerdown', onUserGesture);
+      window.removeEventListener('touchstart', onUserGesture);
+      window.removeEventListener('click', onUserGesture);
+      window.removeEventListener('keydown', onUserGesture);
       if (video) {
         try {
           video.pause();
@@ -111,17 +129,23 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         document.body.style.overflow = '';
       } catch (e) {}
     };
-  }, [unmuteAudio]);
+  }, [handleInteraction]);
 
-  // Time update for smooth ending transition
+  // Smooth ending transition near end of video
   const handleTimeUpdate = () => {
     const video = videoRef.current;
     if (!video || !video.duration) return;
 
-    // Start graceful fade out 0.45s before video ends
-    if (video.duration - video.currentTime <= 0.45 && !completedRef.current) {
+    // Gracefully fade out 0.4s before video finishes (only after 3s have elapsed)
+    if (video.currentTime > 3 && video.duration - video.currentTime <= 0.4 && !completedRef.current) {
       finishIntro();
     }
+  };
+
+  // Video error handler to prevent stuck black screen
+  const handleError = () => {
+    console.error('Intro video failed to load, falling back to app');
+    finishIntro();
   };
 
   if (isDone) return null;
@@ -129,7 +153,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   return (
     <div
       ref={containerRef}
-      onClick={unmuteAudio}
+      onClick={handleInteraction}
       style={{
         position: 'fixed',
         inset: 0,
@@ -145,15 +169,19 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       {/* ── Native High-Performance HTML5 Video Element ── */}
       <video
         ref={videoRef}
-        src="/intro.mp4"
         autoPlay
-        muted={isMuted}
+        muted
         playsInline
         webkit-playsinline="true"
         x5-playsinline="true"
         preload="auto"
+        onPlaying={() => {
+          setIsPlaying(true);
+          setIsBlocked(false);
+        }}
         onEnded={finishIntro}
         onTimeUpdate={handleTimeUpdate}
+        onError={handleError}
         style={{
           display: 'block',
           position: 'absolute',
@@ -165,14 +193,70 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           objectPosition: 'center',
           backgroundColor: '#000000',
         }}
-      />
+      >
+        <source src="/intro.mp4" type="video/mp4" />
+      </video>
 
-      {/* ── Unmute Sound Prompt Badge (shown when muted) ── */}
-      {isMuted && (
+      {/* ── Fallback Play Button Overlay (shown if browser blocked autoplay) ── */}
+      {isBlocked && (
         <div
           onClick={(e) => {
             e.stopPropagation();
-            unmuteAudio();
+            handleInteraction();
+          }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 100001,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            cursor: 'pointer',
+          }}
+        >
+          <div
+            style={{
+              width: '84px',
+              height: '84px',
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+              border: '2px solid rgba(255, 255, 255, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 45px rgba(37, 99, 235, 0.75)',
+              marginBottom: '18px',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <span style={{ fontSize: '36px', color: '#ffffff', marginLeft: '6px' }}>▶</span>
+          </div>
+
+          <div
+            style={{
+              fontSize: '1.2rem',
+              fontWeight: 800,
+              color: '#ffffff',
+              letterSpacing: '0.05em',
+              textShadow: '0 0 15px rgba(59, 130, 246, 0.8)',
+              direction: 'rtl',
+            }}
+          >
+            اضغط لتشغيل الإنترو ✦ Play
+          </div>
+        </div>
+      )}
+
+      {/* ── Unmute Sound Prompt Badge (shown when playing but muted) ── */}
+      {!isBlocked && isMuted && isPlaying && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            handleInteraction();
           }}
           style={{
             position: 'fixed',
@@ -182,23 +266,24 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '8px 16px',
+            padding: '8px 18px',
             borderRadius: '9999px',
-            background: 'rgba(8, 14, 34, 0.75)',
+            background: 'rgba(8, 14, 34, 0.8)',
             border: '1px solid rgba(96, 165, 250, 0.45)',
             backdropFilter: 'blur(10px)',
             WebkitBackdropFilter: 'blur(10px)',
             color: '#e2e8f0',
-            fontSize: '0.82rem',
+            fontSize: '0.85rem',
             fontWeight: 600,
             cursor: 'pointer',
-            boxShadow: '0 0 20px rgba(37, 99, 235, 0.35)',
+            boxShadow: '0 0 25px rgba(37, 99, 235, 0.4)',
             transition: 'all 0.25s ease',
             direction: 'rtl',
+            animation: 'pulse 2s ease-in-out infinite',
           }}
         >
-          <span style={{ fontSize: '1rem' }}>🔊</span>
-          <span>انقر لتشغيل الصوت</span>
+          <span style={{ fontSize: '1.1rem' }}>🔊</span>
+          <span>انقر في أي مكان لتشغيل الصوت</span>
         </div>
       )}
 
