@@ -1,17 +1,26 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import gsap from 'gsap';
 
-const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+const FRAME_COUNT = 122;
+const DURATION_SECONDS = 5.0;
+
+const getFrameUrl = (index) => {
+  const num = String(index).padStart(3, '0');
+  return `/intro-frames/frame_${num}.jpg`;
+};
 
 export default function PlayStationIntro({ onComplete, onPlaySound }) {
-  const videoRef = useRef(null);
-  const [overlayOpacity, setOverlayOpacity] = useState(1);
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [isDone, setIsDone] = useState(false);
   const completedRef = useRef(false);
-  const soundTriggeredRef = useRef(false);
+  const soundPlayedRef = useRef(false);
+  const imagesRef = useRef([]);
+  const tweenRef = useRef(null);
 
   const triggerSound = useCallback(() => {
-    if (soundTriggeredRef.current) return;
-    soundTriggeredRef.current = true;
+    if (soundPlayedRef.current) return;
+    soundPlayedRef.current = true;
     try {
       if (onPlaySound) onPlaySound();
     } catch (e) {}
@@ -20,6 +29,9 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
     completedRef.current = true;
+    if (tweenRef.current) {
+      tweenRef.current.kill();
+    }
     try {
       document.body.style.overflow = '';
     } catch (e) {}
@@ -27,116 +39,161 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     if (onComplete) onComplete();
   }, [onComplete]);
 
+  const handleSkip = (e) => {
+    if (e) e.stopPropagation();
+    if (containerRef.current) {
+      gsap.to(containerRef.current, {
+        opacity: 0,
+        duration: 0.25,
+        ease: 'power2.out',
+        onComplete: finishIntro,
+      });
+    } else {
+      finishIntro();
+    }
+  };
+
   useEffect(() => {
     try {
       document.body.style.overflow = 'hidden';
     } catch (e) {}
 
-    const v = videoRef.current;
-    if (!v) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: false });
 
-    v.muted = true;
-    v.defaultMuted = true;
-    v.playsInline = true;
-    v.setAttribute('muted', '');
-    v.setAttribute('playsinline', '');
-    v.setAttribute('webkit-playsinline', '');
+    // Handle canvas sizing for sharp retina rendering
+    const handleResize = () => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
 
-    const playVideo = () => {
-      if (!v) return;
-      const promise = v.play();
-      if (promise !== undefined) {
-        promise
-          .then(() => {
-            triggerSound();
-          })
-          .catch((err) => {
-            // Autoplay waiting for interaction or buffer
-            console.log('Video autoplay deferred:', err);
-          });
-      }
+    // Draw single frame to canvas with aspect-ratio cover
+    const drawImageCover = (img) => {
+      if (!img || !img.complete || img.naturalWidth === 0) return;
+      const cw = canvas.width;
+      const ch = canvas.height;
+      const iw = img.naturalWidth;
+      const ih = img.naturalHeight;
+      const scale = Math.max(cw / iw, ch / ih);
+      const nw = iw * scale;
+      const nh = ih * scale;
+      const nx = (cw - nw) / 2;
+      const ny = (ch - nh) / 2;
+      ctx.drawImage(img, nx, ny, nw, nh);
     };
 
-    if (v.readyState >= 2) {
-      playVideo();
-    } else {
-      v.addEventListener('canplay', playVideo, { once: true });
-      v.addEventListener('loadeddata', playVideo, { once: true });
+    // Preload all frames
+    const images = [];
+    imagesRef.current = images;
+
+    // Load first frame immediately
+    const firstImg = new Image();
+    firstImg.src = getFrameUrl(1);
+    firstImg.onload = () => {
+      drawImageCover(firstImg);
+    };
+    images[0] = firstImg;
+
+    for (let i = 2; i <= FRAME_COUNT; i++) {
+      const img = new Image();
+      img.src = getFrameUrl(i);
+      images[i - 1] = img;
     }
 
+    // Playhead state object for GSAP
+    const playhead = { frame: 0 };
+
+    // GSAP Timeline animation
+    const tl = gsap.timeline({
+      delay: 0.1,
+      onStart: () => {
+        triggerSound();
+      },
+      onComplete: () => {
+        gsap.to(containerRef.current, {
+          opacity: 0,
+          duration: 0.5,
+          ease: 'power2.out',
+          onComplete: finishIntro,
+        });
+      },
+    });
+
+    tl.to(playhead, {
+      frame: FRAME_COUNT - 1,
+      snap: 'frame',
+      ease: 'none',
+      duration: DURATION_SECONDS,
+      onUpdate: () => {
+        const idx = Math.floor(playhead.frame);
+        const img = images[idx];
+        if (img && img.complete) {
+          drawImageCover(img);
+        }
+      },
+    });
+
+    // Fade out overlay during the last 0.75s
+    tl.to(
+      containerRef.current,
+      {
+        opacity: 0,
+        duration: 0.75,
+        ease: 'power2.inOut',
+      },
+      `-=${0.75}`
+    );
+
+    tweenRef.current = tl;
+
     return () => {
+      window.removeEventListener('resize', handleResize);
+      if (tl) tl.kill();
       try {
         document.body.style.overflow = '';
       } catch (e) {}
     };
-  }, [triggerSound]);
-
-  const handleVideoTimeUpdate = () => {
-    const v = videoRef.current;
-    if (!v || !v.duration) return;
-    const remaining = v.duration - v.currentTime;
-    if (remaining <= 0.85) {
-      const fade = clamp(remaining / 0.85, 0, 1);
-      setOverlayOpacity(fade);
-    }
-  };
-
-  const handleContainerClick = () => {
-    const v = videoRef.current;
-    if (v && v.paused) {
-      v.play().then(triggerSound).catch(() => {});
-    }
-  };
+  }, [finishIntro, triggerSound]);
 
   if (isDone) return null;
 
   return (
     <div
-      onClick={handleContainerClick}
+      ref={containerRef}
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        pointerEvents: overlayOpacity < 0.25 ? 'none' : 'auto',
-        opacity: overlayOpacity,
-        transition: 'opacity 140ms linear',
         backgroundColor: '#030511',
         overflow: 'hidden',
         cursor: 'default',
+        transition: 'opacity 140ms linear',
       }}
-      aria-label="PlayStation 5 DualSense Intro"
+      aria-label="PlayStation 5 Cinematic Intro (GSAP Canvas)"
     >
-      <video
-        ref={videoRef}
-        src="/models/ps5-intro.mp4"
-        autoPlay
-        muted
-        playsInline
-        preload="auto"
-        onTimeUpdate={handleVideoTimeUpdate}
-        onEnded={finishIntro}
-        onPlaying={triggerSound}
+      <canvas
+        ref={canvasRef}
         style={{
-          width: '100vw',
-          height: '100vh',
-          objectFit: 'cover',
-          objectPosition: 'center center',
-          backgroundColor: '#030511',
           display: 'block',
           position: 'absolute',
           top: 0,
           left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: '#030511',
         }}
-      >
-        <source src="/models/ps5-intro.mp4" type="video/mp4" />
-        <source src="/models/ps5-intro.webm" type="video/webm" />
-      </video>
+      />
 
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          finishIntro();
-        }}
+        onClick={handleSkip}
         style={{
           position: 'fixed',
           bottom: '28px',
