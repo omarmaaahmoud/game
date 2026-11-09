@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 
-const FRAME_COUNT = 147;
-const DURATION_SECONDS = 6.125;
+const FRAME_COUNT = 48;
+const DURATION_SECONDS = 8.0;
 
 const getFrameUrl = (index) => {
   const num = String(index).padStart(3, '0');
@@ -172,12 +172,12 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       }
     };
 
-    // Safety timeout: if after 3.5s at least 35 frames are loaded, start playback
+    // Safety timeout: if after 2s at least 20 frames are loaded, start playback
     const safetyTimeout = setTimeout(() => {
-      if (!started && loadedCount >= 30) {
+      if (!started && loadedCount >= 20) {
         startAnimation();
       }
-    }, 3500);
+    }, 2000);
 
     // Preload all frames
     for (let i = 1; i <= FRAME_COUNT; i++) {
