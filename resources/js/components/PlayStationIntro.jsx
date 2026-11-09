@@ -3,10 +3,10 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
-  const [isFading, setIsFading] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [hasSound, setHasSound] = useState(false);
   const completedRef = useRef(false);
+  const fadingRef = useRef(false);
 
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
@@ -30,10 +30,10 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const handleSkip = useCallback((e) => {
     if (e) e.stopPropagation();
     if (containerRef.current) {
-      containerRef.current.style.transition = 'opacity 0.25s ease-out';
+      containerRef.current.style.transition = 'opacity 0.2s ease-out';
       containerRef.current.style.opacity = '0';
       containerRef.current.style.pointerEvents = 'none';
-      setTimeout(finishIntro, 250);
+      setTimeout(finishIntro, 200);
     } else {
       finishIntro();
     }
@@ -49,6 +49,53 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     }
   }, [onPlaySound]);
 
+  const handleContainerClick = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      // If paused for any reason, force play
+      if (video.paused) {
+        video.play().catch(() => {});
+      }
+      // Un-mute on first touch/click
+      if (video.muted) {
+        video.muted = false;
+        video.volume = 1.0;
+        setHasSound(true);
+        if (onPlaySound) onPlaySound();
+      }
+    }
+  }, [onPlaySound]);
+
+  // Robust Callback Ref: Sets autoplay and muted DOM properties immediately on mount
+  const setVideoNode = useCallback((node) => {
+    if (!node) return;
+    videoRef.current = node;
+
+    // Direct DOM property enforcement required by iOS Safari & Android
+    node.muted = true;
+    node.defaultMuted = true;
+    node.playsInline = true;
+    node.setAttribute('muted', '');
+    node.setAttribute('playsinline', '');
+    node.setAttribute('webkit-playsinline', '');
+    node.setAttribute('autoplay', '');
+
+    const startPlay = () => {
+      node.muted = true;
+      const p = node.play();
+      if (p !== undefined) {
+        p.catch(() => {
+          node.muted = true;
+          node.play().catch(() => {});
+        });
+      }
+    };
+
+    startPlay();
+    node.addEventListener('loadedmetadata', startPlay, { once: true });
+    node.addEventListener('canplay', startPlay, { once: true });
+  }, []);
+
   useEffect(() => {
     try {
       document.body.style.overflow = 'hidden';
@@ -57,36 +104,26 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     const video = videoRef.current;
     if (!video) return;
 
-    // Ensure DOM properties are set before autoplay check
-    video.defaultMuted = true;
+    // Try starting playback in effect as well
     video.muted = true;
-    video.playsInline = true;
+    video.defaultMuted = true;
+    video.play().catch(() => {
+      video.muted = true;
+      video.play().catch(() => {});
+    });
 
-    const playVideo = () => {
-      const promise = video.play();
-      if (promise !== undefined) {
-        promise.catch(() => {
-          // Retry with muted guaranteed
-          video.muted = true;
-          video.play().catch(() => {});
-        });
-      }
-    };
-
-    playVideo();
-
-    // Smooth transition into homepage as video nears completion
+    // Seamless dive-in transition: only dissolve at the very end of the controller dive
     const handleTimeUpdate = () => {
-      if (!video) return;
-      const duration = video.duration || 3.65;
+      if (!video || fadingRef.current) return;
+      const duration = video.duration || 4.0;
       const remaining = duration - video.currentTime;
 
-      // Start smooth dissolve 0.4s before video ends
-      if (remaining <= 0.4 && !isFading && containerRef.current) {
-        setIsFading(true);
-        containerRef.current.style.transition = 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s ease-in';
+      // Start quick dissolve only in the last 0.25s of the video (after full controller dive)
+      if (remaining <= 0.25 && containerRef.current) {
+        fadingRef.current = true;
+        containerRef.current.style.transition = 'opacity 0.25s ease-out, transform 0.25s ease-out';
         containerRef.current.style.opacity = '0';
-        containerRef.current.style.transform = 'scale(1.04)';
+        containerRef.current.style.transform = 'scale(1.03)';
         containerRef.current.style.pointerEvents = 'none';
       }
     };
@@ -96,14 +133,14 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     };
 
     const handleError = () => {
-      // If video fails, gracefully proceed to site without blocking
+      // Gracefully advance if video file fails
       finishIntro();
     };
 
-    // Safety timeout: video is 3.65s, after 4.2s ensure transition completes
+    // Safety timeout: 4.0s video, timeout at 4.6s guarantees it never blocks
     const safetyTimer = setTimeout(() => {
       finishIntro();
-    }, 4200);
+    }, 4600);
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('ended', handleEnded);
@@ -121,14 +158,15 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         document.body.style.overflow = '';
       } catch (e) {}
     };
-  }, [finishIntro, isFading]);
+  }, [finishIntro]);
 
   if (isDone) return null;
 
   return (
     <div
       ref={containerRef}
-      onClick={toggleSound}
+      onClick={handleContainerClick}
+      onTouchStart={handleContainerClick}
       style={{
         position: 'fixed',
         inset: 0,
@@ -140,9 +178,9 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       }}
       aria-label="Cinematic PlayStation Intro"
     >
-      {/* Hardware-Accelerated 1080p 24FPS Cinematic Video */}
+      {/* 1080p 24FPS Cinematic Video (MP4 first for 100% universal iOS/Android autoplay, WebM second) */}
       <video
-        ref={videoRef}
+        ref={setVideoNode}
         autoPlay
         muted
         playsInline
@@ -157,8 +195,8 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           backgroundColor: '#000000',
         }}
       >
-        <source src="/intro.webm" type="video/webm" />
         <source src="/intro.mp4" type="video/mp4" />
+        <source src="/intro.webm" type="video/webm" />
       </video>
 
       {/* Official Tecorbi Company Logo & Emblem Watermark (Top Left) */}
