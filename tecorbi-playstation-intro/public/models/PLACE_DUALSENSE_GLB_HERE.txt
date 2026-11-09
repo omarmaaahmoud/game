@@ -1,5 +1,0 @@
-Place your PlayStation 5 DualSense 3D model here with the exact filename:
-dualsense.glb
-
-Full path:
-public/models/dualsense.glb
