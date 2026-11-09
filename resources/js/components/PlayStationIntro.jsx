@@ -2,12 +2,21 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
-export default function PlayStationIntro({ onComplete }) {
+export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const videoRef = useRef(null);
   const [overlayOpacity, setOverlayOpacity] = useState(1);
   const [isDone, setIsDone] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const completedRef = useRef(false);
+  const soundPlayedRef = useRef(false);
+
+  const triggerSound = useCallback(() => {
+    if (soundPlayedRef.current) return;
+    soundPlayedRef.current = true;
+    try {
+      if (onPlaySound) onPlaySound();
+    } catch (e) {}
+  }, [onPlaySound]);
 
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
@@ -38,6 +47,7 @@ export default function PlayStationIntro({ onComplete }) {
       try {
         await v.play();
         setNeedsTap(false);
+        triggerSound();
       } catch (err) {
         setNeedsTap(true);
       }
@@ -76,6 +86,7 @@ export default function PlayStationIntro({ onComplete }) {
     const v = videoRef.current;
     if (!v) return;
     v.muted = true;
+    triggerSound();
     v.play()
       .then(() => setNeedsTap(false))
       .catch(() => finishIntro());
@@ -109,7 +120,7 @@ export default function PlayStationIntro({ onComplete }) {
     >
       <video
         ref={videoRef}
-        src="/models/ps5-intro.mp4?v=6"
+        src="/models/ps5-intro.mp4?v=7"
         autoPlay
         muted
         playsInline
@@ -129,7 +140,10 @@ export default function PlayStationIntro({ onComplete }) {
           top: 0,
           left: 0,
         }}
-      />
+      >
+        <source src="/models/ps5-intro.mp4?v=7" type="video/mp4" />
+        <source src="/models/ps5-intro.webm?v=7" type="video/webm" />
+      </video>
 
       {needsTap && (
         <div
