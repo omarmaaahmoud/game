@@ -78,13 +78,13 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     // Smooth transition into homepage as video nears completion
     const handleTimeUpdate = () => {
       if (!video) return;
-      const duration = video.duration || 4.0;
+      const duration = video.duration || 3.65;
       const remaining = duration - video.currentTime;
 
-      // Start smooth dissolve 0.5s before video ends
-      if (remaining <= 0.5 && !isFading && containerRef.current) {
+      // Start smooth dissolve 0.4s before video ends
+      if (remaining <= 0.4 && !isFading && containerRef.current) {
         setIsFading(true);
-        containerRef.current.style.transition = 'opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1), transform 0.5s ease-in';
+        containerRef.current.style.transition = 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s ease-in';
         containerRef.current.style.opacity = '0';
         containerRef.current.style.transform = 'scale(1.04)';
         containerRef.current.style.pointerEvents = 'none';
@@ -95,10 +95,10 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       finishIntro();
     };
 
-    // Safety timeout: video is 4 seconds, so after 4.5s ensure transition completes
+    // Safety timeout: video is 3.65 seconds, so after 4.0s ensure transition completes
     const safetyTimer = setTimeout(() => {
       finishIntro();
-    }, 4500);
+    }, 4000);
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('ended', handleEnded);
