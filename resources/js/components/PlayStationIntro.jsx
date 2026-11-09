@@ -210,40 +210,42 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       <div
         style={{
           position: 'fixed',
-          top: '20px',
-          left: '20px',
+          top: 'max(20px, env(safe-area-inset-top, 20px))',
+          left: 'max(20px, env(safe-area-inset-left, 20px))',
           zIndex: 100001,
           display: 'flex',
+          flexDirection: 'row',
           alignItems: 'center',
           gap: '10px',
-          padding: '8px 14px',
+          padding: '8px 16px',
           borderRadius: '9999px',
-          background: 'rgba(8, 14, 34, 0.7)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          border: '1px solid rgba(147, 197, 253, 0.3)',
+          background: 'rgba(8, 14, 34, 0.72)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(147, 197, 253, 0.35)',
           boxShadow: '0 0 25px rgba(0, 0, 0, 0.6)',
           pointerEvents: 'none',
           userSelect: 'none',
+          direction: 'ltr',
         }}
       >
         <img
           src="/images/tecorbi-icon.png"
           alt="Tecorbi Icon"
           style={{
-            width: '24px',
-            height: '24px',
+            width: '26px',
+            height: '26px',
             objectFit: 'contain',
-            filter: 'drop-shadow(0 0 6px rgba(147, 197, 253, 0.7))',
+            filter: 'drop-shadow(0 0 8px rgba(96, 165, 250, 0.8))',
           }}
         />
         <img
           src="/images/tecorbi-logo-white.png"
           alt="Tecorbi Logo"
           style={{
-            height: '20px',
+            height: '21px',
             objectFit: 'contain',
-            filter: 'drop-shadow(0 0 10px rgba(59, 130, 246, 0.5))',
+            filter: 'drop-shadow(0 0 10px rgba(59, 130, 246, 0.6))',
           }}
         />
       </div>
@@ -254,17 +256,17 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           onClick={toggleSound}
           style={{
             position: 'fixed',
-            top: '20px',
-            right: '20px',
+            top: 'max(20px, env(safe-area-inset-top, 20px))',
+            right: 'max(20px, env(safe-area-inset-right, 20px))',
             zIndex: 100003,
-            padding: '8px 18px',
+            padding: '9px 18px',
             borderRadius: '9999px',
             border: '1px solid rgba(147, 197, 253, 0.45)',
-            background: 'rgba(15, 23, 42, 0.85)',
+            background: 'rgba(15, 23, 42, 0.88)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             color: '#93c5fd',
-            fontSize: '0.84rem',
+            fontSize: '0.86rem',
             fontWeight: 700,
             cursor: 'pointer',
             display: 'flex',
@@ -297,15 +299,15 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         >
           <div
             style={{
-              padding: '12px 24px',
+              padding: '12px 26px',
               borderRadius: '9999px',
-              background: 'rgba(15, 23, 42, 0.75)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(96, 165, 250, 0.4)',
-              boxShadow: '0 0 30px rgba(37, 99, 235, 0.45)',
+              background: 'rgba(15, 23, 42, 0.82)',
+              backdropFilter: 'blur(14px)',
+              WebkitBackdropFilter: 'blur(14px)',
+              border: '1px solid rgba(96, 165, 250, 0.5)',
+              boxShadow: '0 0 35px rgba(37, 99, 235, 0.5)',
               color: '#ffffff',
-              fontSize: '0.95rem',
+              fontSize: '0.98rem',
               fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
@@ -313,7 +315,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
               animation: 'pulse 1.8s ease-in-out infinite',
             }}
           >
-            <span style={{ fontSize: '1.2rem' }}>🎮</span>
+            <span style={{ fontSize: '1.25rem' }}>🎮</span>
             <span>المس الشاشة للبدء</span>
           </div>
         </div>
@@ -324,8 +326,8 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         onClick={handleSkip}
         style={{
           position: 'fixed',
-          bottom: '24px',
-          right: '24px',
+          bottom: 'max(24px, calc(env(safe-area-inset-bottom, 24px) + 8px))',
+          right: 'max(24px, env(safe-area-inset-right, 24px))',
           zIndex: 100002,
           padding: '9px 20px',
           borderRadius: '9999px',
