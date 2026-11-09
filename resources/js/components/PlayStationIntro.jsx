@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import gsap from 'gsap';
 
-const FRAME_COUNT = 122;
-const DURATION_SECONDS = 5.0;
+const FRAME_COUNT = 192;
+const DURATION_SECONDS = 8.0;
 
 const getFrameUrl = (index) => {
   const num = String(index).padStart(3, '0');
@@ -14,23 +14,19 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
   const containerRef = useRef(null);
   const [isDone, setIsDone] = useState(false);
   const completedRef = useRef(false);
-  const soundPlayedRef = useRef(false);
-  const imagesRef = useRef([]);
+  const audioRef = useRef(null);
   const tweenRef = useRef(null);
-
-  const triggerSound = useCallback(() => {
-    if (soundPlayedRef.current) return;
-    soundPlayedRef.current = true;
-    try {
-      if (onPlaySound) onPlaySound();
-    } catch (e) {}
-  }, [onPlaySound]);
 
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
     completedRef.current = true;
     if (tweenRef.current) {
       tweenRef.current.kill();
+    }
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch (e) {}
     }
     try {
       document.body.style.overflow = '';
@@ -58,11 +54,23 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       document.body.style.overflow = 'hidden';
     } catch (e) {}
 
+    // Initialize audio from the cinematic video
+    const audio = new Audio('/intro-frames/intro-sound.mp3');
+    audio.preload = 'auto';
+    audioRef.current = audio;
+
+    const playAudio = () => {
+      audio.play().catch(() => {
+        // Fallback to web audio synth if audio tag is gesture-blocked
+        if (onPlaySound) onPlaySound();
+      });
+    };
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d', { alpha: false });
 
-    // Handle canvas sizing for sharp retina rendering
+    // Handle canvas sizing for sharp rendering
     const handleResize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = window.innerWidth;
@@ -75,7 +83,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     handleResize();
     window.addEventListener('resize', handleResize);
 
-    // Draw single frame to canvas with aspect-ratio cover
+    // Draw frame to canvas with aspect-ratio cover
     const drawImageCover = (img) => {
       if (!img || !img.complete || img.naturalWidth === 0) return;
       const cw = canvas.width;
@@ -90,11 +98,10 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       ctx.drawImage(img, nx, ny, nw, nh);
     };
 
-    // Preload all frames
+    // Preload frames
     const images = [];
-    imagesRef.current = images;
 
-    // Load first frame immediately
+    // First frame render
     const firstImg = new Image();
     firstImg.src = getFrameUrl(1);
     firstImg.onload = () => {
@@ -108,14 +115,14 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       images[i - 1] = img;
     }
 
-    // Playhead state object for GSAP
+    // Playhead state for GSAP
     const playhead = { frame: 0 };
 
     // GSAP Timeline animation
     const tl = gsap.timeline({
-      delay: 0.1,
+      delay: 0.05,
       onStart: () => {
-        triggerSound();
+        playAudio();
       },
       onComplete: () => {
         gsap.to(containerRef.current, {
@@ -141,15 +148,15 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       },
     });
 
-    // Fade out overlay during the last 0.75s
+    // Smooth fade out at the end
     tl.to(
       containerRef.current,
       {
         opacity: 0,
-        duration: 0.75,
+        duration: 0.85,
         ease: 'power2.inOut',
       },
-      `-=${0.75}`
+      `-=${0.85}`
     );
 
     tweenRef.current = tl;
@@ -157,11 +164,15 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
     return () => {
       window.removeEventListener('resize', handleResize);
       if (tl) tl.kill();
+      if (audio) {
+        audio.pause();
+        audio.src = '';
+      }
       try {
         document.body.style.overflow = '';
       } catch (e) {}
     };
-  }, [finishIntro, triggerSound]);
+  }, [finishIntro, onPlaySound]);
 
   if (isDone) return null;
 
@@ -172,12 +183,12 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        backgroundColor: '#030511',
+        backgroundColor: '#000000',
         overflow: 'hidden',
         cursor: 'default',
         transition: 'opacity 140ms linear',
       }}
-      aria-label="PlayStation 5 Cinematic Intro (GSAP Canvas)"
+      aria-label="Cinematic Intro Animation (GSAP Canvas)"
     >
       <canvas
         ref={canvasRef}
@@ -188,7 +199,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
           left: 0,
           width: '100vw',
           height: '100vh',
-          backgroundColor: '#030511',
+          backgroundColor: '#000000',
         }}
       />
 
