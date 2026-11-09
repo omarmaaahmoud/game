@@ -210,88 +210,79 @@ function TecorbiRobot3D({ className = '', style = {} }) {
   );
 }
 
-/* Educational Electronics Gadget (Inspired by 9V Battery & Snap Connector from Workbook) */
-function TecorbiCircuit3D({ className = '', style = {} }) {
+/* ── Living Cyber Arena Background (Animated Laser Energy Highways & Floating Particles) ── */
+function CosmicDecorations() {
   return (
-    <div className={`tecorbi-circuit-gadget ${className}`} style={{ width: '100%', height: '100%', ...style }} aria-hidden="true">
-      <svg viewBox="0 0 160 160" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <div className="living-cyber-arena-bg" aria-hidden="true">
+      {/* Soft Ambient Breathing Aura Light Pools */}
+      <div className="cyber-aurora cyber-aurora-top-tr" />
+      <div className="cyber-aurora cyber-aurora-bottom-bl" />
+      <div className="cyber-aurora cyber-aurora-center" />
+
+      {/* Full-canvas Moving Laser Highway Tracks */}
+      <svg className="cyber-circuit-svg" viewBox="0 0 1440 900" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="batteryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3925DE" />
-            <stop offset="100%" stopColor="#1E1088" />
+          <linearGradient id="laserGradIndigo" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3925DE" stopOpacity="0.8" />
+            <stop offset="100%" stopColor="#818cf8" stopOpacity="0.95" />
           </linearGradient>
-          <linearGradient id="snapGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3B82F6" />
-            <stop offset="100%" stopColor="#1D4ED8" />
+          <linearGradient id="laserGradLime" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#C3F53C" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="#a3e635" stopOpacity="0.7" />
           </linearGradient>
-          <filter id="circuitGlow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#3925DE" floodOpacity="0.2" />
+          <filter id="laserGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
         </defs>
 
-        <g filter="url(#circuitGlow)" transform="translate(10, 10)">
-          {/* Base Electronic PCB Tile */}
-          <rect x="15" y="25" width="110" height="95" rx="20" fill="#FFFFFF" stroke="rgba(57, 37, 222, 0.25)" strokeWidth="2.5" />
-          
-          {/* PCB Copper Tracks */}
-          <path d="M28 45 L50 45 L65 60 L105 60" stroke="#3925DE" strokeWidth="3" strokeLinecap="round" />
-          <path d="M35 95 L55 95 L70 80 L110 80" stroke="#C3F53C" strokeWidth="3.5" strokeLinecap="round" />
+        {/* ── Top-Right Dynamic Circuit Tracks ── */}
+        <path d="M1440 90 L1240 90 L1150 180 L920 180" stroke="#3925DE" strokeWidth="2.5" strokeDasharray="6 6" opacity="0.25" />
+        <path d="M1440 90 L1240 90 L1150 180 L920 180" stroke="url(#laserGradIndigo)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-1" filter="url(#laserGlow)" />
 
-          {/* Solder Nodes */}
-          <circle cx="28" cy="45" r="5" fill="#3925DE" stroke="#FFFFFF" strokeWidth="2" />
-          <circle cx="105" cy="60" r="5" fill="#C3F53C" stroke="#3925DE" strokeWidth="2" />
-          <circle cx="35" cy="95" r="5" fill="#C3F53C" stroke="#08102B" strokeWidth="2" />
-          <circle cx="110" cy="80" r="5" fill="#3925DE" stroke="#FFFFFF" strokeWidth="2" />
+        <path d="M1440 140 L1290 140 L1210 220 L1020 220" stroke="#C3F53C" strokeWidth="2" opacity="0.25" />
+        <path d="M1440 140 L1290 140 L1210 220 L1020 220" stroke="url(#laserGradLime)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-2" filter="url(#laserGlow)" />
 
-          {/* Snap Connector Block (Blue bar from workbook) */}
-          <g transform="translate(30, 48) rotate(12)">
-            <rect x="0" y="0" width="70" height="24" rx="12" fill="url(#snapGrad)" />
-            {/* Snap Terminals */}
-            <circle cx="12" cy="12" r="7" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
-            <circle cx="12" cy="12" r="3" fill="#3925DE" />
-            <circle cx="58" cy="12" r="7" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
-            <circle cx="58" cy="12" r="3" fill="#3925DE" />
-          </g>
+        {/* ── Bottom-Left Dynamic Circuit Tracks (Moving & Flowing with Energy) ── */}
+        <path d="M0 720 L260 720 L360 620 L600 620" stroke="#3925DE" strokeWidth="2.5" strokeDasharray="8 8" opacity="0.25" />
+        <path d="M0 720 L260 720 L360 620 L600 620" stroke="url(#laserGradIndigo)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-3" filter="url(#laserGlow)" />
 
-          {/* 9V Power Badge */}
-          <rect x="42" y="104" width="56" height="20" rx="10" fill="#C3F53C" />
-          <text x="70" y="118" textAnchor="middle" fill="#08102B" fontSize="11" fontWeight="900" fontFamily="sans-serif">⚡ 9V POWER</text>
+        <path d="M0 800 L200 800 L300 700 L500 700" stroke="#C3F53C" strokeWidth="2" opacity="0.28" />
+        <path d="M0 800 L200 800 L300 700 L500 700" stroke="url(#laserGradLime)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-4" filter="url(#laserGlow)" />
+
+        <path d="M0 870 L140 870 L220 790 L400 790" stroke="#3925DE" strokeWidth="1.8" opacity="0.2" />
+
+        {/* ── Dynamic Radar Nodes ── */}
+        <g>
+          {/* Top-Right Nodes */}
+          <circle cx="1240" cy="90" r="5" fill="#3925DE" />
+          <circle cx="1240" cy="90" r="10" stroke="#3925DE" strokeWidth="1.5" className="radar-ring" />
+          <circle cx="1150" cy="180" r="4.5" fill="#C3F53C" />
+          <circle cx="1210" cy="220" r="5" fill="#C3F53C" />
+          <circle cx="1210" cy="220" r="11" stroke="#C3F53C" strokeWidth="1.5" className="radar-ring-delay" />
+
+          {/* Bottom-Left Nodes */}
+          <circle cx="260" cy="720" r="5" fill="#3925DE" />
+          <circle cx="260" cy="720" r="11" stroke="#3925DE" strokeWidth="1.5" className="radar-ring" />
+          <circle cx="360" cy="620" r="5.5" fill="#C3F53C" />
+          <circle cx="360" cy="620" r="12" stroke="#C3F53C" strokeWidth="1.5" className="radar-ring-delay" />
+          <circle cx="300" cy="700" r="4.5" fill="#C3F53C" />
+          <circle cx="200" cy="800" r="4" fill="#3925DE" />
         </g>
       </svg>
-    </div>
-  );
-}
 
-/* Authentic Electronic Circuit Tracks (Top-Right & Bottom-Left PCB Traces) */
-function CosmicDecorations() {
-  return (
-    <div className="circuit-decorations-layer" aria-hidden="true">
-      {/* Top Right Corner Electronic Circuits (Like the workbook header) */}
-      <svg className="circuit-svg-corner-tr" viewBox="0 0 320 240" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M120 0 L120 40 L160 80 L320 80" stroke="#3925DE" strokeWidth="2.5" strokeLinecap="round" opacity="0.35" />
-        <path d="M180 0 L180 30 L220 70 L320 70" stroke="#C3F53C" strokeWidth="2.5" strokeLinecap="round" opacity="0.6" />
-        <path d="M60 0 L60 60 L110 110 L320 110" stroke="#3925DE" strokeWidth="2" strokeLinecap="round" opacity="0.25" />
-        
-        {/* Solder Nodes */}
-        <circle cx="160" cy="80" r="5" fill="#3925DE" opacity="0.6" className="circuit-pulse-node" />
-        <circle cx="220" cy="70" r="4.5" fill="#C3F53C" className="circuit-pulse-node" />
-        <circle cx="110" cy="110" r="4" fill="#3925DE" opacity="0.5" />
-        <circle cx="280" cy="80" r="3.5" fill="#3925DE" opacity="0.7" />
-        <circle cx="260" cy="70" r="3.5" fill="#C3F53C" />
-      </svg>
-
-      {/* Bottom Left Corner Electronic Circuits */}
-      <svg className="circuit-svg-corner-bl" viewBox="0 0 300 220" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M0 160 L110 160 L160 110 L160 0" stroke="#3925DE" strokeWidth="2.5" strokeLinecap="round" opacity="0.35" />
-        <path d="M0 190 L90 190 L140 140 L140 0" stroke="#C3F53C" strokeWidth="2.5" strokeLinecap="round" opacity="0.55" />
-        <path d="M0 120 L70 120 L120 70 L120 0" stroke="#3925DE" strokeWidth="2" strokeLinecap="round" opacity="0.25" />
-
-        {/* Solder Nodes */}
-        <circle cx="110" cy="160" r="5" fill="#3925DE" opacity="0.6" />
-        <circle cx="140" cy="140" r="4.5" fill="#C3F53C" className="circuit-pulse-node" />
-        <circle cx="70" cy="120" r="4" fill="#3925DE" opacity="0.5" />
-        <circle cx="160" cy="70" r="3.5" fill="#3925DE" opacity="0.7" />
-      </svg>
+      {/* Floating Holographic Particles & Tech Sparkles */}
+      <div className="floating-cyber-particles">
+        <span className="cyber-sparkle cs-1">✦</span>
+        <span className="cyber-sparkle cs-2">★</span>
+        <span className="cyber-sparkle cs-3">✦</span>
+        <span className="cyber-sparkle cs-4">◆</span>
+        <span className="cyber-sparkle cs-5">✦</span>
+        <span className="cyber-orb co-1" />
+        <span className="cyber-orb co-2" />
+        <span className="cyber-orb co-3" />
+        <span className="cyber-orb co-4" />
+      </div>
     </div>
   );
 }
@@ -467,48 +458,56 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
     <main className="space-lobby-view student-home-space-view">
       <CosmicDecorations />
 
-      {/* Hero Section: Official Waving Robot + Tecorbi Title + Smart Electronics Gadget */}
-      <div className="space-hero-section">
-        {/* Left: Official Waving Tecorbi Robot Mascot */}
-        <div className="space-planet-anchor" title="Tecorbi Robot Mascot">
-          <TecorbiRobot3D />
-        </div>
-
-        {/* Center: Educational Gaming Title */}
-        <div className="space-hero-content">
-          <div className="space-live-pill-row" style={{ justifyContent: 'center', marginBottom: '14px' }}>
-            <div className="space-live-pill">
-              <Zap size={14} />
-              <span>ساحة التحديات التعليمية الذكية للأبطال</span>
-            </div>
+      {/* ── Creative Hero Stage: Official Mascot Host + Interactive Speech Bubble + Bold Typography ── */}
+      <div className="tecorbi-hero-stage">
+        {/* Interactive Mascot Host with Live Speech Bubble */}
+        <div className="tecorbi-robot-host-card">
+          <div className="robot-mascot-wrapper" title="روبوت Tecorbi الذكي">
+            <TecorbiRobot3D />
           </div>
-          <h1 className="space-hero-title hero-title-tecorbi">
-            <span style={{ color: '#3925DE' }}>Tecorbi</span>
-            <span style={{ color: '#08102B' }}>Kids Arena 🎮</span>
-          </h1>
-          <p className="space-hero-teacher hero-subtitle-tecorbi">
-            اكتب كود المسابقة المكوّن من 6 أرقام المعروض على شاشة المعلم وابدأ التحدي ⚡
-          </p>
+          <div className={`robot-speech-bubble ${pin.length === 6 ? 'bubble-ready' : ''}`}>
+            <span className="bubble-icon">{pin.length === 6 ? '⚡' : '👋'}</span>
+            <span className="bubble-text">
+              {pin.length === 6 ? 'كود ممتاز! اضغط انطلق لبدء التحدي 🚀' : 'أهلاً يا بطل! ادخل كود اللعبة وانضم إلينا 🎮'}
+            </span>
+          </div>
         </div>
 
-        {/* Right: Educational Electronics Gadget (Workbook style) */}
-        <div className="space-rocket-anchor" title="Tecorbi Educational Circuit">
-          <TecorbiCircuit3D />
+        {/* Live Pill Badge */}
+        <div className="tecorbi-live-badge-row">
+          <div className="tecorbi-live-badge">
+            <span className="badge-pulse-dot" />
+            <Zap size={14} />
+            <span>ساحة التحديات التعليمية الذكية للأبطال</span>
+          </div>
         </div>
+
+        {/* Brand Headline */}
+        <h1 className="tecorbi-main-title">
+          <span className="title-indigo">Tecorbi</span>
+          <span className="title-navy">Kids Arena</span>
+          <span className="title-emoji">🎮</span>
+        </h1>
+
+        <p className="tecorbi-main-subtitle">
+          اكتب كود المسابقة المكوّن من 6 أرقام المعروض على شاشة المعلم وابدأ التحدي ⚡
+        </p>
       </div>
 
-      {/* Game PIN Translucent Clean White Card with Electric Indigo Border */}
-      <div className="space-pin-glass-card student-pin-card-wrapper">
-        <div className="spgc-header">
-          <div className="spgc-gamepad-disc">
+      {/* ── Holographic Game PIN Console ── */}
+      <div className="tecorbi-pin-console">
+        {/* Console Header */}
+        <div className="tpc-header">
+          <div className="tpc-gamepad-disc">
             <Gamepad2 size={24} />
           </div>
-          <span className="spgc-title">(GAME PIN) كود انضمام الطلاب للمسابقة</span>
+          <span className="tpc-title">(GAME PIN) كود انضمام الطلاب للمسابقة</span>
         </div>
 
-        <div className="pin-input-giant-wrapper">
+        {/* PIN Input */}
+        <div className="tpc-input-wrap">
           <input
-            className="pin-input-space-giant"
+            className="tpc-pin-input"
             value={pin}
             onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
             placeholder="123456"
@@ -516,27 +515,62 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
             inputMode="numeric"
             autoFocus
           />
+          {pin.length > 0 && (
+            <button
+              type="button"
+              className="tpc-clear-btn"
+              onClick={() => { sfx.play('click'); setPin(''); }}
+              title="مسح الكود"
+            >
+              ✕
+            </button>
+          )}
         </div>
 
+        {/* Arcade Launch Button */}
         <button
-          className="btn-3d btn-primary-giant"
-          onClick={() => checkAndProceed(pin)}
-          disabled={loading || pin.length !== 6}
-          style={{ width: '100%', marginBottom: '0' }}
+          className={`btn-arcade-launch ${pin.length === 6 ? 'ready' : ''}`}
+          onClick={() => {
+            if (pin.length === 6) {
+              sfx.play('click');
+              checkAndProceed(pin);
+            } else {
+              sfx.play('wrong');
+              setNotice('⚠️ يرجى إدخال كود المسابقة المكوّن من 6 أرقام أولاً');
+            }
+          }}
+          disabled={loading}
         >
-          {loading ? 'جاري التحقق...' : <><ArrowRight size={22} /> انطلق إلى المسابقة 🚀</>}
+          {loading ? (
+            <span className="btn-loading-state">جاري التحقق من الكود... ⏳</span>
+          ) : pin.length === 6 ? (
+            <>
+              <ArrowRight size={22} className="launch-arrow" />
+              <span>انطلق إلى المسابقة 🚀</span>
+            </>
+          ) : (
+            <>
+              <Gamepad2 size={20} />
+              <span>أدخل كود الـ PIN (6 أرقام)</span>
+            </>
+          )}
         </button>
 
-        {/* Friendly Quick Demo Helper */}
-        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+        {/* Interactive Quick Demo Helper Button with Sound & Auto-fill */}
+        <div className="tpc-quick-demo-row">
           <button
             type="button"
-            className="tecorbi-tag-lime"
-            onClick={() => setPin('123456')}
-            style={{ cursor: 'pointer', border: 'none' }}
-            title="انقر لتعبئة الكود التجريبي تلقائياً"
+            className="btn-quick-demo-pill"
+            onClick={() => {
+              sfx.play('correct');
+              setPin('123456');
+            }}
+            title="انقر لتعبئة الكود التجريبي فوراً"
           >
-            ⚡ تجربة سريعة: الكود 123456 متاح دائماً
+            <span className="demo-chip-icon">⚡</span>
+            <span className="demo-chip-label">تجربة سريعة:</span>
+            <span className="demo-chip-code">123456</span>
+            <span className="demo-chip-tap">اضغط للتعبئة 🎯</span>
           </button>
         </div>
       </div>
