@@ -20,6 +20,6 @@ database/*.sqlite-wal
 database/*.sqlite-shm
 .DS_Store
 Thumbs.db
-# Raw large source media
-b_Create_a_cinematic_8.mp4
+*.mp4
+*.webm
 
