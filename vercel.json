@@ -2,9 +2,7 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "rewrites": [
-    {
-      "source": "/((?!.*\\.[\\w]+$).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
+

@@ -21,6 +21,5 @@ database/*.sqlite-shm
 .DS_Store
 Thumbs.db
 *.mp4
-!public/intro.mp4
 *.webm
 
