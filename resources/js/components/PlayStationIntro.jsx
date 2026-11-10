@@ -131,10 +131,10 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
       finishIntro();
     };
 
-    // Safety timeout: 4.92s video, finishes at 5.4s if not already ended
+    // Safety timeout: 10.14s video, finishes at 10.6s if not already ended
     const safetyTimer = setTimeout(() => {
       finishIntro();
-    }, 5400);
+    }, 10600);
 
     video.addEventListener('ended', handleEnded);
     video.addEventListener('error', handleError);
@@ -163,7 +163,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         position: 'fixed',
         inset: 0,
         zIndex: 99999,
-        backgroundColor: '#000000',
+        backgroundColor: '#070b19',
         overflow: 'hidden',
         cursor: 'pointer',
         willChange: 'opacity',
@@ -183,6 +183,19 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         video::-webkit-media-controls-play-button {
           display: none !important;
         }
+        .ps5-intro-video {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+          background-color: #070b19;
+          pointer-events: none;
+        }
+        @media (max-aspect-ratio: 16/9) {
+          .ps5-intro-video {
+            object-fit: contain !important;
+          }
+        }
       `}</style>
 
       {/* 1080p 24FPS Cinematic Video (Native FastStart MP4 directly on src for iOS Safari) */}
@@ -196,14 +209,7 @@ export default function PlayStationIntro({ onComplete, onPlaySound }) {
         webkit-playsinline="true"
         x5-playsinline="true"
         controls={false}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          display: 'block',
-          backgroundColor: '#000000',
-          pointerEvents: 'none',
-        }}
+        className="ps5-intro-video"
       />
 
       {/* Official Tecorbi Company Logo & Emblem Watermark (Top Left) */}
