@@ -15,8 +15,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
  */
 
 const TOTAL_FRAMES = 110;
-const FPS = 12;
-const FRAME_DURATION = 1000 / FPS; // ~83.33ms per frame
+const FPS = 18; // Speed up intro from 12fps (9.2s) to 18fps (~6.1s) for a snappier, more energetic entrance
+const FRAME_DURATION = 1000 / FPS; // ~55.5ms per frame
 
 export default function TecorbiIntro({ onComplete }) {
   const containerRef = useRef(null);
@@ -88,6 +88,8 @@ export default function TecorbiIntro({ onComplete }) {
     const audio = new Audio('/intro-frames/audio.mp3');
     audio.preload = 'auto';
     audio.muted = true;
+    audio.playbackRate = FPS / 12; // Synchronize audio speed with accelerated frame rate
+    audio.preservesPitch = true;
     audioRef.current = audio;
 
     // 2. Canvas setup & responsive resizing
@@ -194,8 +196,8 @@ export default function TecorbiIntro({ onComplete }) {
 
     animFrameIdRef.current = requestAnimationFrame(animate);
 
-    // Safety fallback timeout: guaranteed transition after 11.5s
-    const safetyTimer = setTimeout(() => finishIntro(), 11500);
+    // Safety fallback timeout: guaranteed transition after 8s
+    const safetyTimer = setTimeout(() => finishIntro(), 8000);
 
     return () => {
       clearTimeout(safetyTimer);
