@@ -458,21 +458,8 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
     <main className="space-lobby-view student-home-space-view">
       <CosmicDecorations />
 
-      {/* ── Creative Hero Stage: Official Mascot Host + Interactive Speech Bubble + Bold Typography ── */}
+      {/* ── Hero Stage: Bold Typography & Live Status ── */}
       <div className="tecorbi-hero-stage">
-        {/* Interactive Mascot Host with Live Speech Bubble */}
-        <div className="tecorbi-robot-host-card">
-          <div className="robot-mascot-wrapper" title="روبوت Tecorbi الذكي">
-            <TecorbiRobot3D />
-          </div>
-          <div className={`robot-speech-bubble ${pin.length === 6 ? 'bubble-ready' : ''}`}>
-            <span className="bubble-icon">{pin.length === 6 ? '⚡' : '👋'}</span>
-            <span className="bubble-text">
-              {pin.length === 6 ? 'كود ممتاز! اضغط انطلق لبدء التحدي 🚀' : 'أهلاً يا بطل! ادخل كود اللعبة وانضم إلينا 🎮'}
-            </span>
-          </div>
-        </div>
-
         {/* Live Pill Badge */}
         <div className="tecorbi-live-badge-row">
           <div className="tecorbi-live-badge">
