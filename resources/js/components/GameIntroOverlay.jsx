@@ -4,19 +4,23 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
  * GameIntroOverlay Component
  *
  * Production-ready zero-click video intro overlay for Tecorbi Kids Arena.
- * Features:
- *  - 100% Zero-click autoplay (muted + playsInline programmatic enforcement)
- *  - Fullscreen fixed viewport overlay (z-[9999])
- *  - Smooth 700ms fade-out transition on ended or skip
- *  - Glassmorphic modern gaming "Skip" button in bottom-right corner
- *  - Optional unmute toggle for audio immersion
- *  - sessionStorage caching so users only see it once per session
+ * Responsive mobile refactor:
+ *  - Responsive video scaling: object-contain on mobile/portrait (no cropping of robot/logo), md:object-cover on desktop
+ *  - 100dvh dynamic viewport unit to eliminate mobile address-bar jumping
+ *  - Mobile safe-area insets (iOS notch & bottom home-bar padding)
+ *  - Collision-free control buttons: Skip in TOP-RIGHT, Sound Toggle in TOP-LEFT
+ *  - Minimum 44px touch targets for mobile accessibility
+ *  - 100% Zero-click autoplay programmatically enforced via videoRef
+ *  - 700ms smooth fade-out exit transition
+ *  - sessionStorage caching ('hasSeenIntro')
+ *  - document.body.style.overflow lock/cleanup
  */
 export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const hasFinishedRef = useRef(false);
 
+  // 1. Session Storage Caching initial state check
   const [isVisible, setIsVisible] = useState(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -82,9 +86,9 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
     }
   }, []);
 
-  // Check sessionStorage on mount and enforce zero-click autoplay
+  // Programmatic Zero-Click Autoplay Enforcement & Lifecycle
   useEffect(() => {
-    // 1. Session Storage Caching check
+    // 1. Session Storage Caching check on mount
     try {
       if (sessionStorage.getItem('hasSeenIntro')) {
         if (typeof onFinish === 'function') {
@@ -109,7 +113,7 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
       video.defaultMuted = true;
       video.playsInline = true;
 
-      // Attempt immediate play
+      // Programmatic play
       video.play().catch((err) => {
         console.log('Autoplay handled:', err);
       });
@@ -130,7 +134,13 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
   return (
     <div
       ref={containerRef}
-      className={`fixed inset-0 z-[9999] bg-[#070b19] flex items-center justify-center overflow-hidden transition-opacity duration-700 ease-out select-none ${
+      style={{
+        paddingTop: 'env(safe-area-inset-top, 16px)',
+        paddingBottom: 'env(safe-area-inset-bottom, 16px)',
+        paddingLeft: 'env(safe-area-inset-left, 16px)',
+        paddingRight: 'env(safe-area-inset-right, 16px)',
+      }}
+      className={`fixed inset-0 z-[9999] w-full h-[100dvh] min-h-[100dvh] bg-[#070b19] flex items-center justify-center overflow-hidden transition-opacity duration-700 ease-out select-none ${
         isFading ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
       }`}
       aria-label="Tecorbi Kids Arena Intro Overlay"
@@ -140,10 +150,10 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
       {/* Background Ambience Glow */}
       <div className="absolute inset-0 bg-radial-vignette pointer-events-none opacity-40" />
 
-      {/* Intro Video Element */}
+      {/* Intro Video Element: object-contain on mobile portrait (no cropping of robot/logo), md:object-cover on desktop */}
       <video
         ref={videoRef}
-        className="w-full h-full object-cover"
+        className="w-full h-full object-contain md:object-cover pointer-events-none"
         autoPlay
         muted
         playsInline
@@ -155,17 +165,17 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
         Your browser does not support the video tag.
       </video>
 
-      {/* Audio Toggle Pill (Bottom-Left) */}
+      {/* TOP-LEFT: Sound / Mute Toggle Button (Collision-Free, min 44px touch target) */}
       <button
         type="button"
         onClick={handleToggleSound}
-        className="absolute bottom-6 left-6 z-10 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold backdrop-blur-md bg-black/40 border border-white/15 text-white/80 hover:text-white hover:bg-black/60 hover:border-cyan-400/50 transition-all duration-300 shadow-lg cursor-pointer group"
+        className="absolute top-4 left-4 sm:top-6 sm:left-6 z-20 flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 min-h-[44px] rounded-full text-[11px] sm:text-xs font-semibold backdrop-blur-md bg-black/45 border border-white/20 text-white/90 hover:text-white hover:bg-black/65 hover:border-cyan-400/60 shadow-lg shadow-black/50 active:scale-95 transition-all duration-300 cursor-pointer group"
         aria-label={isMuted ? 'تشغيل الصوت' : 'كتم الصوت'}
       >
         {isMuted ? (
           <>
             <svg
-              className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform"
+              className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform shrink-0"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -178,7 +188,7 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
         ) : (
           <>
             <svg
-              className="w-4 h-4 text-emerald-400 animate-pulse"
+              className="w-4 h-4 text-emerald-400 animate-pulse shrink-0"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -190,18 +200,18 @@ export default function GameIntroOverlay({ onFinish, videoSrc = '/intro.mp4' }) 
         )}
       </button>
 
-      {/* Sleek Modern Gaming-Styled "Skip" Button (Bottom-Right) */}
+      {/* TOP-RIGHT: Modern Glassmorphic "Skip" Button (Collision-Free, min 44px touch target) */}
       <button
         type="button"
         onClick={handleExit}
-        className="absolute bottom-6 right-6 z-10 flex items-center gap-2.5 px-5 py-2.5 rounded-full backdrop-blur-md bg-white/10 hover:bg-white/20 border border-white/20 hover:border-cyan-400/60 text-white/90 hover:text-white shadow-xl shadow-black/50 hover:shadow-cyan-500/20 active:scale-95 transition-all duration-300 cursor-pointer group"
+        className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 sm:px-4 sm:py-2 min-h-[44px] rounded-full backdrop-blur-md bg-white/10 hover:bg-white/20 border border-white/20 hover:border-cyan-400/60 text-white/90 hover:text-white shadow-xl shadow-black/50 hover:shadow-cyan-500/20 active:scale-95 transition-all duration-300 cursor-pointer group text-[11px] sm:text-xs font-semibold"
         aria-label="تخطي الفيديو (Skip Intro)"
       >
-        <span className="font-mono text-xs uppercase tracking-wider text-white/80 group-hover:text-cyan-300 transition-colors">
+        <span className="font-mono uppercase tracking-wider text-white/80 group-hover:text-cyan-300 transition-colors">
           تخطي · Skip
         </span>
         <svg
-          className="w-4 h-4 text-white/70 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all duration-300"
+          className="w-4 h-4 text-white/70 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all duration-300 shrink-0"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
