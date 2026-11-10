@@ -46,10 +46,14 @@ if (fs.existsSync(modelsDir)) {
   fs.cpSync(modelsDir, path.join(distDir, 'models'), { recursive: true });
 }
 
-// 4b. Copy public/intro-frames to dist/intro-frames
+// 4b. Copy public/intro-frames and intro-frames-desktop to dist
 const introFramesDir = path.join(publicDir, 'intro-frames');
 if (fs.existsSync(introFramesDir)) {
   fs.cpSync(introFramesDir, path.join(distDir, 'intro-frames'), { recursive: true });
+}
+const introFramesDeskDir = path.join(publicDir, 'intro-frames-desktop');
+if (fs.existsSync(introFramesDeskDir)) {
+  fs.cpSync(introFramesDeskDir, path.join(distDir, 'intro-frames-desktop'), { recursive: true });
 }
 
 // 5. Copy any other public static files (ignoring build & index.php)
