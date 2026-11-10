@@ -210,7 +210,7 @@ function TecorbiRobot3D({ className = '', style = {} }) {
   );
 }
 
-/* ── Living Cyber Arena Background (Long Spanning Laser Energy Highways with Calibrated Clearance) ── */
+/* ── Living Cyber Arena Background (Animated Laser Energy Highways & Floating Particles) ── */
 function CosmicDecorations() {
   return (
     <div className="living-cyber-arena-bg" aria-hidden="true">
@@ -219,8 +219,8 @@ function CosmicDecorations() {
       <div className="cyber-aurora cyber-aurora-bottom-bl" />
       <div className="cyber-aurora cyber-aurora-center" />
 
-      {/* ── Fullscreen Long Laser Highway Network ── */}
-      <svg className="cyber-circuit-svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" fill="none" xmlns="http://www.w3.org/2000/svg">
+      {/* Full-canvas Moving Laser Highway Tracks */}
+      <svg className="cyber-circuit-svg" viewBox="0 0 1440 900" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="laserGradIndigo" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#3925DE" stopOpacity="0.8" />
@@ -231,58 +231,53 @@ function CosmicDecorations() {
             <stop offset="100%" stopColor="#a3e635" stopOpacity="0.7" />
           </linearGradient>
           <filter id="laserGlow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
         </defs>
 
-        {/* ── Track 1: Long Top-Right Highway (Electric Indigo) ── */}
-        <path d="M1440 75 L1220 75 L1110 185 L1110 480" stroke="#3925DE" strokeWidth="2" opacity="0.22" strokeLinecap="round" />
-        <path d="M1440 75 L1220 75 L1110 185 L1110 480" stroke="url(#laserGradIndigo)" strokeWidth="3" strokeLinecap="round" className="laser-long-run-1" filter="url(#laserGlow)" />
+        {/* ── Top-Right Dynamic Circuit Tracks ── */}
+        <path d="M1440 90 L1240 90 L1150 180 L960 180" stroke="#3925DE" strokeWidth="2.5" strokeDasharray="6 6" opacity="0.25" />
+        <path d="M1440 90 L1240 90 L1150 180 L960 180" stroke="url(#laserGradIndigo)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-1" filter="url(#laserGlow)" />
 
-        {/* ── Track 2: Long Top-Right Highway (Lime Accent) ── */}
-        <path d="M1440 130 L1270 130 L1170 230 L1170 550" stroke="#C3F53C" strokeWidth="2" opacity="0.25" strokeLinecap="round" />
-        <path d="M1440 130 L1270 130 L1170 230 L1170 550" stroke="url(#laserGradLime)" strokeWidth="3" strokeLinecap="round" className="laser-long-run-2" filter="url(#laserGlow)" />
+        <path d="M1440 140 L1290 140 L1210 220 L1040 220" stroke="#C3F53C" strokeWidth="2" opacity="0.25" />
+        <path d="M1440 140 L1290 140 L1210 220 L1040 220" stroke="url(#laserGradLime)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-2" filter="url(#laserGlow)" />
 
-        {/* ── Track 3: Long Bottom-Left Highway (Electric Indigo) ── */}
-        <path d="M0 690 L250 690 L360 580 L360 320" stroke="#3925DE" strokeWidth="2" opacity="0.22" strokeLinecap="round" />
-        <path d="M0 690 L250 690 L360 580 L360 320" stroke="url(#laserGradIndigo)" strokeWidth="3" strokeLinecap="round" className="laser-long-run-3" filter="url(#laserGlow)" />
+        {/* ── Bottom-Left Dynamic Circuit Tracks (Moving & Flowing with Energy) ── */}
+        <path d="M0 720 L260 720 L360 620 L480 620" stroke="#3925DE" strokeWidth="2.5" strokeDasharray="8 8" opacity="0.25" />
+        <path d="M0 720 L260 720 L360 620 L480 620" stroke="url(#laserGradIndigo)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-3" filter="url(#laserGlow)" />
 
-        {/* ── Track 4: Grand Lower Transversal Highway (Spanning width under card - Lime) ── */}
-        <path d="M0 780 L200 780 L280 860 L1160 860 L1220 800 L1440 800" stroke="#C3F53C" strokeWidth="2" opacity="0.25" strokeLinecap="round" />
-        <path d="M0 780 L200 780 L280 860 L1160 860 L1220 800 L1440 800" stroke="url(#laserGradLime)" strokeWidth="3.5" strokeLinecap="round" className="laser-long-run-4" filter="url(#laserGlow)" />
+        <path d="M0 800 L200 800 L300 700 L420 700" stroke="#C3F53C" strokeWidth="2" opacity="0.28" />
+        <path d="M0 800 L200 800 L300 700 L420 700" stroke="url(#laserGradLime)" strokeWidth="3.5" strokeLinecap="round" className="laser-pulse-run-4" filter="url(#laserGlow)" />
 
-        {/* ── Solder Nodes with Radar Pulse Rings (Positioned safely away from card) ── */}
+        <path d="M0 870 L140 870 L220 790 L340 790" stroke="#3925DE" strokeWidth="1.8" opacity="0.2" />
+
+        {/* ── Dynamic Radar Nodes ── */}
         <g>
           {/* Top-Right Nodes */}
-          <circle cx="1220" cy="75" r="4.5" fill="#3925DE" />
-          <circle cx="1110" cy="185" r="4.5" fill="#3925DE" />
-          <circle cx="1110" cy="480" r="5" fill="#3925DE" />
-          <circle cx="1110" cy="480" r="10" stroke="#3925DE" strokeWidth="1.2" className="radar-ring" />
-
-          <circle cx="1270" cy="130" r="4" fill="#C3F53C" />
-          <circle cx="1170" cy="230" r="4.5" fill="#C3F53C" />
-          <circle cx="1170" cy="550" r="5" fill="#C3F53C" />
-          <circle cx="1170" cy="550" r="10" stroke="#C3F53C" strokeWidth="1.2" className="radar-ring-delay" />
+          <circle cx="1240" cy="90" r="5" fill="#3925DE" />
+          <circle cx="1240" cy="90" r="10" stroke="#3925DE" strokeWidth="1.5" className="radar-ring" />
+          <circle cx="1150" cy="180" r="4.5" fill="#C3F53C" />
+          <circle cx="1210" cy="220" r="5" fill="#C3F53C" />
+          <circle cx="1210" cy="220" r="11" stroke="#C3F53C" strokeWidth="1.5" className="radar-ring-delay" />
 
           {/* Bottom-Left Nodes */}
-          <circle cx="250" cy="690" r="4.5" fill="#3925DE" />
-          <circle cx="360" cy="580" r="4.5" fill="#3925DE" />
-          <circle cx="360" cy="320" r="5" fill="#3925DE" />
-          <circle cx="360" cy="320" r="10" stroke="#3925DE" strokeWidth="1.2" className="radar-ring" />
-
-          {/* Lower Transversal Highway Nodes */}
-          <circle cx="200" cy="780" r="4.5" fill="#C3F53C" />
-          <circle cx="280" cy="860" r="4.5" fill="#C3F53C" />
-          <circle cx="720" cy="860" r="5" fill="#C3F53C" />
-          <circle cx="720" cy="860" r="11" stroke="#C3F53C" strokeWidth="1.2" className="radar-ring-delay" />
-          <circle cx="1160" cy="860" r="4.5" fill="#C3F53C" />
-          <circle cx="1220" cy="800" r="4.5" fill="#C3F53C" />
+          <circle cx="260" cy="720" r="5" fill="#3925DE" />
+          <circle cx="260" cy="720" r="11" stroke="#3925DE" strokeWidth="1.5" className="radar-ring" />
+          <circle cx="360" cy="620" r="5.5" fill="#C3F53C" />
+          <circle cx="360" cy="620" r="12" stroke="#C3F53C" strokeWidth="1.5" className="radar-ring-delay" />
+          <circle cx="300" cy="700" r="4.5" fill="#C3F53C" />
+          <circle cx="200" cy="800" r="4" fill="#3925DE" />
         </g>
       </svg>
 
-      {/* ── Soft Ambient Luminous Bokeh (Drifting softly in side margins only) ── */}
+      {/* Floating Holographic Particles & Tech Sparkles */}
       <div className="floating-cyber-particles">
+        <span className="cyber-sparkle cs-1">✦</span>
+        <span className="cyber-sparkle cs-2">★</span>
+        <span className="cyber-sparkle cs-3">✦</span>
+        <span className="cyber-sparkle cs-4">◆</span>
+        <span className="cyber-sparkle cs-5">✦</span>
         <span className="cyber-orb co-1" />
         <span className="cyber-orb co-2" />
         <span className="cyber-orb co-3" />
