@@ -3,50 +3,34 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 /**
  * TecorbiIntro Component
  *
- * - Mobile / Portrait: Uses dedicated 9:16 vertical video & styling from tecorbi-intro2.html
- *   (720x1280 resolution, exact 9/16 aspect ratio, zero side cropping, zero distortion).
- * - Desktop / Landscape: Uses cinematic 16:9 widescreen video (1344x768).
- * - 100% Zero-Click Autoplay on Mobile Safari & Android (no play button required).
- * - Tap anywhere to unmute/play audio (matching tecorbi-intro2.html behavior).
- * - Clean interface without pause, restart, or fullscreen clutter.
- * - Smooth fade-out exit on video completion or on "انطلق إلى المسابقة 🚀".
+ * Automatic website intro using tecorbi-intro2.html as the original source:
+ * - Uses /videos/tecorbi-intro.mp4 (extracted from tecorbi-intro2.html Base64)
+ * - Autoplay, muted, playsInline, preload="auto"
+ * - Starts automatically without requiring any button or user interaction
+ * - Preserves original 9:16 aspect ratio, colors, sharpness, and animation
+ * - Smooth transition into Tecorbi Kids Arena homepage when finished or skipped
+ * - Tap anywhere to unmute/play audio (matching tecorbi-intro2.html)
+ * - Autoplay fallback if playback is blocked by browser policies
+ * - Mobile responsive with zero black screens (matching radial gradient & poster)
  */
 export default function TecorbiIntro({ onComplete }) {
   const containerRef = useRef(null);
   const videoRef = useRef(null);
   const [isMuted, setIsMuted] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [isAutoplayBlocked, setIsAutoplayBlocked] = useState(false);
   const [progress, setProgress] = useState(0);
   const completedRef = useRef(false);
 
-  // Responsive mobile/portrait detection
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.innerWidth <= 768 || (window.matchMedia && window.matchMedia('(orientation: portrait)').matches);
-  });
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mql = window.matchMedia('(max-width: 768px), (orientation: portrait)');
-    const updateMatch = (e) => setIsMobile(e.matches);
-    setIsMobile(mql.matches);
-
-    if (mql.addEventListener) {
-      mql.addEventListener('change', updateMatch);
-      return () => mql.removeEventListener('change', updateMatch);
-    } else if (mql.addListener) {
-      mql.addListener(updateMatch);
-      return () => mql.removeListener(updateMatch);
-    }
-  }, []);
-
+  // Smooth exit transition into the homepage
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
     completedRef.current = true;
     setIsClosing(true);
 
     if (containerRef.current) {
-      containerRef.current.style.transition = 'opacity 0.35s ease-out';
+      containerRef.current.style.transition = 'opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
       containerRef.current.style.opacity = '0';
       containerRef.current.style.pointerEvents = 'none';
     }
@@ -59,33 +43,64 @@ export default function TecorbiIntro({ onComplete }) {
       if (typeof onComplete === 'function') {
         onComplete();
       }
-    }, 350);
+    }, 400);
   }, [onComplete]);
 
-  // Robust Callback Ref for instant Mobile Safari / iOS Autoplay (Prevents play button overlay)
+  // Robust callback ref for zero-click autoplay on Mobile Safari & Android
   const setVideoRef = useCallback((node) => {
     if (!node) return;
     videoRef.current = node;
 
+    // Strict DOM property & attribute enforcement
     node.muted = true;
     node.defaultMuted = true;
     node.playsInline = true;
     node.setAttribute('muted', '');
     node.setAttribute('playsinline', '');
     node.setAttribute('webkit-playsinline', '');
+    node.setAttribute('x5-playsinline', '');
     node.setAttribute('autoplay', '');
 
-    const attemptPlay = () => {
+    const attemptAutoplay = () => {
       node.muted = true;
-      const p = node.play();
-      if (p !== undefined) {
-        p.catch(() => {});
+      const playPromise = node.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+            setIsAutoplayBlocked(false);
+          })
+          .catch((err) => {
+            // Autoplay blocked by browser policy: activate fallback UI
+            console.warn('Autoplay blocked by browser:', err);
+            setIsAutoplayBlocked(true);
+          });
       }
     };
 
-    attemptPlay();
-    node.addEventListener('loadedmetadata', attemptPlay, { once: true });
-    node.addEventListener('canplay', attemptPlay, { once: true });
+    attemptAutoplay();
+    node.addEventListener('loadedmetadata', attemptAutoplay, { once: true });
+    node.addEventListener('canplay', attemptAutoplay, { once: true });
+  }, []);
+
+  // Tap-to-unmute or tap-to-play fallback (matching tecorbi-intro2.html onclick behavior)
+  const handleInteraction = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    if (v.paused) {
+      v.play()
+        .then(() => {
+          setIsPlaying(true);
+          setIsAutoplayBlocked(false);
+        })
+        .catch(() => {});
+    }
+
+    if (v.muted) {
+      v.muted = false;
+      setIsMuted(false);
+    }
   }, []);
 
   const toggleSound = useCallback((e) => {
@@ -95,17 +110,6 @@ export default function TecorbiIntro({ onComplete }) {
     v.muted = !v.muted;
     setIsMuted(v.muted);
     if (v.paused) v.play().catch(() => {});
-  }, []);
-
-  // Matching tecorbi-intro2.html tap behavior: unmuting audio and making sure video is playing
-  const handleScreenTap = useCallback(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) v.play().catch(() => {});
-    if (v.muted) {
-      v.muted = false;
-      setIsMuted(false);
-    }
   }, []);
 
   const handleTimeUpdate = useCallback(() => {
@@ -122,17 +126,21 @@ export default function TecorbiIntro({ onComplete }) {
     if (v) {
       v.muted = true;
       v.defaultMuted = true;
-      v.play().catch(() => {});
+      v.play()
+        .then(() => {
+          setIsPlaying(true);
+          setIsAutoplayBlocked(false);
+        })
+        .catch(() => {
+          setIsAutoplayBlocked(true);
+        });
     }
 
-    const handleEnded = () => finishIntro();
-    if (v) v.addEventListener('ended', handleEnded);
-
-    const safetyTimer = setTimeout(() => finishIntro(), 11000);
+    // Safety timeout: transition into game after 11.5s max even if playback fails
+    const safetyTimer = setTimeout(() => finishIntro(), 11500);
 
     return () => {
       clearTimeout(safetyTimer);
-      if (v) v.removeEventListener('ended', handleEnded);
       try { document.body.style.overflow = ''; } catch (e) {}
     };
   }, [finishIntro]);
@@ -140,7 +148,7 @@ export default function TecorbiIntro({ onComplete }) {
   return (
     <div
       ref={containerRef}
-      onClick={handleScreenTap}
+      onClick={handleInteraction}
       style={{
         position: 'fixed',
         inset: 0,
@@ -156,20 +164,20 @@ export default function TecorbiIntro({ onComplete }) {
         overflow: 'hidden',
         direction: 'rtl',
         opacity: isClosing ? 0 : 1,
-        transition: 'opacity 0.35s ease-out',
+        transition: 'opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
         cursor: 'pointer',
       }}
       aria-label="TecOrbi Kids Arena Intro"
     >
       <style>{`
-        /* Hide native iOS Safari media play overlays */
+        /* Hide native iOS Safari media play overlays to guarantee clean auto-playback */
         video::-webkit-media-controls { display: none !important; }
         video::-webkit-media-controls-start-playback-button { display: none !important; opacity: 0 !important; }
         video::-webkit-media-controls-play-button { display: none !important; }
 
         .tecorbi-intro-top-row {
           width: 100%;
-          max-width: 1050px;
+          max-width: 900px;
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -181,7 +189,7 @@ export default function TecorbiIntro({ onComplete }) {
           display: inline-flex;
           align-items: center;
           gap: 8px;
-          background: rgba(8, 16, 43, 0.75);
+          background: rgba(8, 16, 43, 0.78);
           border: 1px solid rgba(155, 226, 43, 0.4);
           padding: 6px 14px;
           border-radius: 999px;
@@ -224,19 +232,8 @@ export default function TecorbiIntro({ onComplete }) {
           min-height: 0;
         }
 
-        /* Desktop Landscape Stage (1344/768 Cinematic) */
-        .tecorbi-stage-box-desktop {
-          position: relative;
-          width: min(100%, 1050px);
-          aspect-ratio: 1344 / 768;
-          border-radius: 20px;
-          overflow: hidden;
-          background: #000;
-          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 24px 70px rgba(42, 60, 255, 0.45);
-        }
-
-        /* Mobile Portrait Stage (tecorbi-intro2.html exact 9:16 vertical styling) */
-        .tecorbi-stage-box-mobile {
+        /* Exact 9:16 aspect ratio stage from tecorbi-intro2.html (Responsive on mobile & desktop) */
+        .tecorbi-stage-box {
           position: relative;
           width: min(calc(100vw - 24px), calc((100vh - 120px) * 9 / 16));
           height: min(calc(100vh - 120px), calc((100vw - 24px) * 16 / 9));
@@ -253,11 +250,47 @@ export default function TecorbiIntro({ onComplete }) {
           display: block;
           object-fit: cover;
           pointer-events: none;
+          background: #000;
+        }
+
+        /* Autoplay fallback button when browser strictly blocks autoplay */
+        .tecorbi-fallback-overlay {
+          position: absolute;
+          inset: 0;
+          background: rgba(2, 3, 12, 0.65);
+          backdrop-filter: blur(4px);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          z-index: 5;
+          animation: fadeInFallback 0.3s ease;
+        }
+
+        @keyframes fadeInFallback {
+          from { opacity: 0; transform: scale(0.96); }
+          to { opacity: 1; transform: scale(1); }
+        }
+
+        .tecorbi-fallback-btn {
+          background: linear-gradient(135deg, #4a5cff, #9be22b);
+          color: #fff;
+          font-weight: 800;
+          font-size: 15px;
+          padding: 12px 28px;
+          border-radius: 999px;
+          border: none;
+          box-shadow: 0 8px 30px rgba(74, 92, 255, 0.5);
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
         }
 
         .tecorbi-intro-bottom-row {
           width: 100%;
-          max-width: 1050px;
+          max-width: 900px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -267,7 +300,7 @@ export default function TecorbiIntro({ onComplete }) {
 
         .tecorbi-intro-progress-bar {
           width: 100%;
-          max-width: 420px;
+          max-width: 360px;
           height: 4px;
           background: rgba(255, 255, 255, 0.16);
           border-radius: 999px;
@@ -301,7 +334,7 @@ export default function TecorbiIntro({ onComplete }) {
         }
 
         @media (max-width: 560px) {
-          .tecorbi-stage-box-mobile {
+          .tecorbi-stage-box {
             border-radius: 14px;
             width: min(calc(100vw - 20px), calc((100vh - 110px) * 9 / 16));
             height: min(calc(100vh - 110px), calc((100vw - 20px) * 16 / 9));
@@ -338,12 +371,11 @@ export default function TecorbiIntro({ onComplete }) {
         </button>
       </div>
 
-      {/* Center Stage: Portrait (9:16) for mobile, Landscape (1344/768) for desktop */}
+      {/* Center Stage: Exact 9:16 vertical stage from tecorbi-intro2.html */}
       <div className="tecorbi-stage-center">
-        <div className={isMobile ? "tecorbi-stage-box-mobile" : "tecorbi-stage-box-desktop"}>
+        <div className="tecorbi-stage-box">
           <video
             ref={setVideoRef}
-            key={isMobile ? 'mobile-v' : 'desktop-v'}
             autoPlay
             muted
             playsInline
@@ -351,23 +383,27 @@ export default function TecorbiIntro({ onComplete }) {
             webkit-playsinline="true"
             x5-playsinline="true"
             controls={false}
-            poster={isMobile ? "/intro-mobile-poster.jpg" : "/images/intro-poster.jpg"}
+            poster="/videos/tecorbi-intro-poster.jpg"
             onTimeUpdate={handleTimeUpdate}
+            onEnded={finishIntro}
             aria-label="TecOrbi Kids Arena intro"
             className="tecorbi-video-elem"
           >
-            {isMobile ? (
-              <>
-                <source src="/intro-mobile.webm" type="video/webm" />
-                <source src="/intro-mobile.mp4" type="video/mp4" />
-              </>
-            ) : (
-              <>
-                <source src="/intro.webm" type="video/webm" />
-                <source src="/intro.mp4" type="video/mp4" />
-              </>
-            )}
+            <source src="/videos/tecorbi-intro.webm" type="video/webm" />
+            <source src="/videos/tecorbi-intro.mp4" type="video/mp4" />
           </video>
+
+          {/* Autoplay fallback overlay (only shown if browser blocks autoplay) */}
+          {isAutoplayBlocked && (
+            <div className="tecorbi-fallback-overlay" onClick={handleInteraction}>
+              <button type="button" className="tecorbi-fallback-btn">
+                <span>▶ اضغط للمشاهدة</span>
+              </button>
+              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.75)' }}>
+                انقر في أي مكان لتشغيل الإنترو
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
