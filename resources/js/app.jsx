@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createRoot } from 'react-dom/client';
 import '../css/app.css';
 import { subscribeToSession } from './echo';
-import PlayStationIntro from './components/PlayStationIntro';
+import GameIntroOverlay from './components/GameIntroOverlay';
 import {
   Gamepad2, Trophy, GraduationCap, Users, Play, Pause, SkipForward, Square,
   Clock3, CheckCircle2, Star, Zap, ArrowRight, ArrowLeft, Crown, Copy,
@@ -324,11 +324,10 @@ function App() {
 
   return (
     <div className="game-universe">
-      {/* ── PlayStation 5 DualSense Intro Overlay ── */}
+      {/* ── Tecorbi Game Intro Video Overlay ── */}
       {showIntro && (
-        <PlayStationIntro
-          onComplete={() => setShowIntro(false)}
-          onPlaySound={() => sfx.play('ps5-intro')}
+        <GameIntroOverlay
+          onFinish={() => setShowIntro(false)}
         />
       )}
 
@@ -354,8 +353,14 @@ function App() {
           {mode === 'home' && (
             <button
               className="btn-replay-intro-nav"
-              onClick={() => { sfx.play('click'); setShowIntro(true); }}
-              title="مشاهدة إنترو الـ PlayStation"
+              onClick={() => {
+                sfx.play('click');
+                try {
+                  sessionStorage.removeItem('hasSeenIntro');
+                } catch (e) {}
+                setShowIntro(true);
+              }}
+              title="مشاهدة إنترو Tecorbi Kids Arena"
             >
               <Sparkles size={16} />
               <span>الإنترو 🎮</span>
