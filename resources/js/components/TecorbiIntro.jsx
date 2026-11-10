@@ -1,23 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 /**
- * TecorbiIntro Component
+ * TecorbiIntro Component (Full-Screen Cinematic Edition)
  *
- * Implements the exact design, stage, and controls from tecorbi-intro.html:
- *  - Stage: aspect-ratio 1344/768, border-radius 20px, box-shadow: 0 30px 90px #2a3cff55
- *  - Radial background: ellipse at 50% 30%, #0b1240 0%, #02030c 70%
- *  - Controls bar: Play/Pause, Replay, Fullscreen, and Sound toggle
- *  - Seamless transition to game on ended or skip
+ *  - 100% Fullscreen viewport (fills entire screen on mobile, tablet & desktop)
+ *  - Pure, uncluttered presentation (removed pause, replay & fullscreen buttons)
+ *  - Sleek top sound toggle (🔇 تشغيل الصوت / 🔊 كتم الصوت)
+ *  - Sleek top skip button (تخطي الإنترو 🚀)
+ *  - Tap anywhere to unmute/play
+ *  - Smooth fade-out exit on video end or skip
  */
 export default function TecorbiIntro({ onComplete }) {
   const containerRef = useRef(null);
-  const stageRef = useRef(null);
   const videoRef = useRef(null);
 
   const [isMuted, setIsMuted] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const [touchActive, setTouchActive] = useState(false);
   const completedRef = useRef(false);
 
   const finishIntro = useCallback(() => {
@@ -27,7 +25,7 @@ export default function TecorbiIntro({ onComplete }) {
     setIsClosing(true);
 
     if (containerRef.current) {
-      containerRef.current.style.transition = 'opacity 0.3s ease-out';
+      containerRef.current.style.transition = 'opacity 0.4s ease-out';
       containerRef.current.style.opacity = '0';
       containerRef.current.style.pointerEvents = 'none';
     }
@@ -44,10 +42,10 @@ export default function TecorbiIntro({ onComplete }) {
       if (typeof onComplete === 'function') {
         onComplete();
       }
-    }, 300);
+    }, 400);
   }, [onComplete]);
 
-  // Sound toggle (same as $('snd').onclick in tecorbi-intro.html)
+  // Sound toggle button
   const toggleSound = useCallback((e) => {
     if (e) e.stopPropagation();
     const v = videoRef.current;
@@ -57,46 +55,20 @@ export default function TecorbiIntro({ onComplete }) {
     setIsMuted(v.muted);
     if (v.paused) {
       v.play().catch(() => {});
-      setIsPaused(false);
     }
   }, []);
 
-  // Play/Pause toggle (same as $('pp').onclick in tecorbi-intro.html)
-  const togglePlayPause = useCallback((e) => {
-    if (e) e.stopPropagation();
+  // Screen tap handler: unmute on tap anywhere
+  const handleScreenTap = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
 
     if (v.paused) {
       v.play().catch(() => {});
-      setIsPaused(false);
-    } else {
-      v.pause();
-      setIsPaused(true);
     }
-  }, []);
-
-  // Replay (same as $('rp').onclick in tecorbi-intro.html)
-  const handleReplay = useCallback((e) => {
-    if (e) e.stopPropagation();
-    const v = videoRef.current;
-    if (!v) return;
-
-    v.currentTime = 0;
-    v.play().catch(() => {});
-    setIsPaused(false);
-  }, []);
-
-  // Fullscreen (same as $('fs').onclick in tecorbi-intro.html)
-  const toggleFullscreen = useCallback((e) => {
-    if (e) e.stopPropagation();
-    const st = stageRef.current;
-    if (!st) return;
-
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    } else if (st.requestFullscreen) {
-      st.requestFullscreen().catch(() => {});
+    if (v.muted) {
+      v.muted = false;
+      setIsMuted(false);
     }
   }, []);
 
@@ -108,6 +80,8 @@ export default function TecorbiIntro({ onComplete }) {
     const v = videoRef.current;
     if (v) {
       v.muted = true;
+      v.defaultMuted = true;
+      v.playsInline = true;
       v.play().catch(() => {});
     }
 
@@ -132,191 +106,133 @@ export default function TecorbiIntro({ onComplete }) {
   return (
     <div
       ref={containerRef}
-      className="tecorbi-intro-backdrop"
+      onClick={handleScreenTap}
       style={{
         position: 'fixed',
         inset: 0,
+        width: '100vw',
+        height: '100dvh',
         zIndex: 99999,
-        background: 'radial-gradient(ellipse at 50% 30%, #0b1240 0%, #02030c 70%)',
-        color: '#fff',
-        fontFamily: 'system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '16px',
+        backgroundColor: '#02030c',
         overflow: 'hidden',
+        cursor: 'pointer',
         direction: 'rtl',
         opacity: isClosing ? 0 : 1,
-        transition: 'opacity 0.3s ease-out',
+        transition: 'opacity 0.4s ease-out',
       }}
-      onTouchStart={() => setTouchActive(true)}
+      aria-label="TecOrbi Kids Arena Fullscreen Intro"
     >
       <style>{`
-        .tecorbi-intro-stage {
-          position: relative;
-          width: min(100%, 1100px);
-          aspect-ratio: 1344 / 768;
-          border-radius: 20px;
-          overflow: hidden;
-          background: #000;
-          box-shadow: 0 0 0 1px #ffffff14, 0 30px 90px #2a3cff55;
+        /* Hide native iOS Safari media play overlays */
+        video::-webkit-media-controls {
+          display: none !important;
         }
-        .tecorbi-intro-video {
+        video::-webkit-media-controls-start-playback-button {
+          display: none !important;
+          -webkit-appearance: none;
+          opacity: 0 !important;
+        }
+        video::-webkit-media-controls-play-button {
+          display: none !important;
+        }
+        .tecorbi-fs-video {
           width: 100%;
           height: 100%;
           display: block;
           object-fit: cover;
-          cursor: pointer;
-        }
-        .tecorbi-intro-bar {
-          position: absolute;
-          inset: auto 0 0 0;
-          display: flex;
-          gap: 10px;
-          justify-content: center;
-          padding: 14px;
-          background: linear-gradient(transparent, #000a);
-          opacity: 0;
-          transition: opacity 0.25s;
-          z-index: 10;
-        }
-        .tecorbi-intro-stage:hover .tecorbi-intro-bar,
-        .tecorbi-intro-stage:focus-within .tecorbi-intro-bar,
-        .tecorbi-intro-stage.touch .tecorbi-intro-bar {
-          opacity: 1;
+          background: #02030c;
+          pointer-events: none;
         }
         .tecorbi-intro-btn {
-          font: inherit;
+          font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
           font-size: 14px;
           color: #fff;
-          background: #ffffff1f;
-          border: 1px solid #ffffff33;
+          background: rgba(255, 255, 255, 0.12);
+          border: 1px solid rgba(255, 255, 255, 0.25);
           border-radius: 999px;
-          padding: 8px 16px;
+          padding: 8px 18px;
           cursor: pointer;
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          transition: background 0.2s, border-color 0.2s;
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          transition: all 0.2s ease;
           display: inline-flex;
           align-items: center;
           gap: 6px;
           user-select: none;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
         }
         .tecorbi-intro-btn:hover {
           background: #4a5cff;
           border-color: #4a5cff;
+          transform: scale(1.03);
         }
-        .tecorbi-intro-btn:focus-visible {
-          outline: 2px solid #9be22b;
-          outline-offset: 2px;
+        .tecorbi-btn-sound {
+          position: fixed;
+          top: max(16px, env(safe-area-inset-top, 16px));
+          inset-inline-end: max(16px, env(safe-area-inset-right, 16px));
+          z-index: 100001;
         }
-        .tecorbi-intro-hint {
-          position: absolute;
-          top: 14px;
-          inset-inline-end: 14px;
-          z-index: 10;
-        }
-        .tecorbi-intro-skip {
-          position: absolute;
-          top: 14px;
-          inset-inline-start: 14px;
-          z-index: 10;
+        .tecorbi-btn-skip {
+          position: fixed;
+          top: max(16px, env(safe-area-inset-top, 16px));
+          inset-inline-start: max(16px, env(safe-area-inset-left, 16px));
+          z-index: 100001;
           background: rgba(155, 226, 43, 0.2);
-          border-color: rgba(155, 226, 43, 0.5);
+          border-color: rgba(155, 226, 43, 0.45);
           color: #9be22b;
           font-weight: 700;
         }
-        .tecorbi-intro-skip:hover {
+        .tecorbi-btn-skip:hover {
           background: #9be22b;
           border-color: #9be22b;
           color: #02030c;
         }
         @media (max-width: 560px) {
-          .tecorbi-intro-stage {
-            border-radius: 12px;
-          }
-          .tecorbi-intro-bar {
-            opacity: 1;
-            padding: 10px;
-            gap: 6px;
-          }
           .tecorbi-intro-btn {
             font-size: 12px;
-            padding: 6px 12px;
+            padding: 6px 14px;
           }
         }
       `}</style>
 
-      {/* Main Stage (aspect-ratio 1344/768) */}
-      <main
-        ref={stageRef}
-        className={`tecorbi-intro-stage ${touchActive ? 'touch' : ''}`}
-        id="stage"
+      {/* 100% Fullscreen Video */}
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        autoPlay
+        preload="auto"
+        poster="/images/intro-poster.jpg"
+        aria-label="TecOrbi Kids Arena intro"
+        className="tecorbi-fs-video"
       >
-        <video
-          ref={videoRef}
-          id="v"
-          playsInline
-          muted
-          autoPlay
-          preload="auto"
-          poster="/images/intro-poster.jpg"
-          aria-label="TecOrbi Kids Arena intro"
-          className="tecorbi-intro-video"
-          onClick={togglePlayPause}
-        >
-          <source src="/intro.webm" type="video/webm" />
-          <source src="/intro.mp4" type="video/mp4" />
-        </video>
+        <source src="/intro.webm" type="video/webm" />
+        <source src="/intro.mp4" type="video/mp4" />
+      </video>
 
-        {/* Top Sound Toggle Button (from tecorbi-intro.html) */}
-        <button
-          className="tecorbi-intro-btn tecorbi-intro-hint"
-          id="snd"
-          type="button"
-          onClick={toggleSound}
-        >
-          {isMuted ? '🔇 تشغيل الصوت' : '🔊 كتم الصوت'}
-        </button>
+      {/* Top Sound Toggle Button */}
+      <button
+        className="tecorbi-intro-btn tecorbi-btn-sound"
+        type="button"
+        onClick={toggleSound}
+        aria-label={isMuted ? 'تشغيل الصوت' : 'كتم الصوت'}
+      >
+        {isMuted ? '🔇 تشغيل الصوت' : '🔊 كتم الصوت'}
+      </button>
 
-        {/* Top Skip / Enter Game Button */}
-        <button
-          className="tecorbi-intro-btn tecorbi-intro-skip"
-          type="button"
-          onClick={finishIntro}
-          title="تخطي والبدء فوراً"
-        >
-          <span>تخطي الإنترو 🚀</span>
-        </button>
-
-        {/* Bottom Control Bar (from tecorbi-intro.html) */}
-        <div className="tecorbi-intro-bar">
-          <button
-            id="pp"
-            type="button"
-            className="tecorbi-intro-btn"
-            onClick={togglePlayPause}
-          >
-            {isPaused ? '▶ تشغيل' : '⏸ إيقاف'}
-          </button>
-          <button
-            id="rp"
-            type="button"
-            className="tecorbi-intro-btn"
-            onClick={handleReplay}
-          >
-            ↻ إعادة
-          </button>
-          <button
-            id="fs"
-            type="button"
-            className="tecorbi-intro-btn"
-            onClick={toggleFullscreen}
-          >
-            ⛶ ملء الشاشة
-          </button>
-        </div>
-      </main>
+      {/* Top Skip / Enter Game Button */}
+      <button
+        className="tecorbi-intro-btn tecorbi-btn-skip"
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          finishIntro();
+        }}
+        title="تخطي والبدء فوراً"
+        aria-label="تخطي الإنترو"
+      >
+        <span>تخطي الإنترو 🚀</span>
+      </button>
     </div>
   );
 }
