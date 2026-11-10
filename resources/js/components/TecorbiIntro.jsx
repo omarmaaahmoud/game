@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 /**
- * TecorbiIntro Component (Vertical Mobile-First Layout & Zero-Click Autoplay)
+ * TecorbiIntro Component
  *
- *  - Vertical layout on mobile (بالطول): Top Brand Header, Center 16:9 Cinematic Stage, Bottom Progress & Launch Button
- *  - 100% Zero-Click Autoplay on Mobile Safari & Android via direct WebKit attribute enforcement (no play button required)
- *  - Zero Cropping (مش متأكلة): Robot on right and Tecorbi logo on left are 100% visible on every phone
- *  - Sound on demand: Tap anywhere on screen or click the top sound toggle
- *  - Launch button: "انطلق إلى المسابقة 🚀" for instant entry
- *  - Smooth fade-out exit on video end or click
+ * - Mobile / Portrait: Uses dedicated 9:16 vertical video & styling from tecorbi-intro2.html
+ *   (720x1280 resolution, exact 9/16 aspect ratio, zero side cropping, zero distortion).
+ * - Desktop / Landscape: Uses cinematic 16:9 widescreen video (1344x768).
+ * - 100% Zero-Click Autoplay on Mobile Safari & Android (no play button required).
+ * - Tap anywhere to unmute/play audio (matching tecorbi-intro2.html behavior).
+ * - Clean interface without pause, restart, or fullscreen clutter.
+ * - Smooth fade-out exit on video completion or on "انطلق إلى المسابقة 🚀".
  */
 export default function TecorbiIntro({ onComplete }) {
   const containerRef = useRef(null);
@@ -17,6 +18,27 @@ export default function TecorbiIntro({ onComplete }) {
   const [isClosing, setIsClosing] = useState(false);
   const [progress, setProgress] = useState(0);
   const completedRef = useRef(false);
+
+  // Responsive mobile/portrait detection
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth <= 768 || (window.matchMedia && window.matchMedia('(orientation: portrait)').matches);
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 768px), (orientation: portrait)');
+    const updateMatch = (e) => setIsMobile(e.matches);
+    setIsMobile(mql.matches);
+
+    if (mql.addEventListener) {
+      mql.addEventListener('change', updateMatch);
+      return () => mql.removeEventListener('change', updateMatch);
+    } else if (mql.addListener) {
+      mql.addListener(updateMatch);
+      return () => mql.removeListener(updateMatch);
+    }
+  }, []);
 
   const finishIntro = useCallback(() => {
     if (completedRef.current) return;
@@ -40,12 +62,11 @@ export default function TecorbiIntro({ onComplete }) {
     }, 350);
   }, [onComplete]);
 
-  // Robust Callback Ref for instant Mobile Safari / iOS Autoplay (Prevents play button from appearing)
+  // Robust Callback Ref for instant Mobile Safari / iOS Autoplay (Prevents play button overlay)
   const setVideoRef = useCallback((node) => {
     if (!node) return;
     videoRef.current = node;
 
-    // Direct property and attribute enforcement for iOS WebKit
     node.muted = true;
     node.defaultMuted = true;
     node.playsInline = true;
@@ -76,6 +97,7 @@ export default function TecorbiIntro({ onComplete }) {
     if (v.paused) v.play().catch(() => {});
   }, []);
 
+  // Matching tecorbi-intro2.html tap behavior: unmuting audio and making sure video is playing
   const handleScreenTap = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -106,7 +128,7 @@ export default function TecorbiIntro({ onComplete }) {
     const handleEnded = () => finishIntro();
     if (v) v.addEventListener('ended', handleEnded);
 
-    const safetyTimer = setTimeout(() => finishIntro(), 10500);
+    const safetyTimer = setTimeout(() => finishIntro(), 11000);
 
     return () => {
       clearTimeout(safetyTimer);
@@ -130,7 +152,7 @@ export default function TecorbiIntro({ onComplete }) {
         flexDirection: 'column',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 'max(16px, env(safe-area-inset-top, 16px)) max(16px, env(safe-area-inset-right, 16px)) max(16px, env(safe-area-inset-bottom, 16px)) max(16px, env(safe-area-inset-left, 16px))',
+        padding: 'max(12px, env(safe-area-inset-top, 12px)) max(12px, env(safe-area-inset-right, 12px)) max(12px, env(safe-area-inset-bottom, 12px)) max(12px, env(safe-area-inset-left, 12px))',
         overflow: 'hidden',
         direction: 'rtl',
         opacity: isClosing ? 0 : 1,
@@ -147,11 +169,12 @@ export default function TecorbiIntro({ onComplete }) {
 
         .tecorbi-intro-top-row {
           width: 100%;
-          max-width: 1000px;
+          max-width: 1050px;
           display: flex;
           justify-content: space-between;
           align-items: center;
           z-index: 10;
+          gap: 8px;
         }
 
         .tecorbi-intro-brand-tag {
@@ -193,22 +216,35 @@ export default function TecorbiIntro({ onComplete }) {
 
         .tecorbi-stage-center {
           width: 100%;
-          max-width: 1000px;
           display: flex;
           align-items: center;
           justify-content: center;
           flex: 1;
-          padding: 12px 0;
+          padding: 6px 0;
+          min-height: 0;
         }
 
-        .tecorbi-stage-box {
+        /* Desktop Landscape Stage (1344/768 Cinematic) */
+        .tecorbi-stage-box-desktop {
           position: relative;
-          width: 100%;
+          width: min(100%, 1050px);
           aspect-ratio: 1344 / 768;
           border-radius: 20px;
           overflow: hidden;
           background: #000;
           box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 24px 70px rgba(42, 60, 255, 0.45);
+        }
+
+        /* Mobile Portrait Stage (tecorbi-intro2.html exact 9:16 vertical styling) */
+        .tecorbi-stage-box-mobile {
+          position: relative;
+          width: min(calc(100vw - 24px), calc((100vh - 120px) * 9 / 16));
+          height: min(calc(100vh - 120px), calc((100vw - 24px) * 16 / 9));
+          aspect-ratio: 9 / 16;
+          border-radius: 18px;
+          overflow: hidden;
+          background: #000;
+          box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 30px 90px rgba(42, 60, 255, 0.55);
         }
 
         .tecorbi-video-elem {
@@ -221,17 +257,17 @@ export default function TecorbiIntro({ onComplete }) {
 
         .tecorbi-intro-bottom-row {
           width: 100%;
-          max-width: 1000px;
+          max-width: 1050px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 12px;
+          gap: 10px;
           z-index: 10;
         }
 
         .tecorbi-intro-progress-bar {
           width: 100%;
-          max-width: 440px;
+          max-width: 420px;
           height: 4px;
           background: rgba(255, 255, 255, 0.16);
           border-radius: 999px;
@@ -250,7 +286,7 @@ export default function TecorbiIntro({ onComplete }) {
           border: 1px solid #9be22b;
           font-weight: 850;
           font-size: 14px;
-          padding: 10px 24px;
+          padding: 9px 24px;
           border-radius: 999px;
           box-shadow: 0 4px 20px rgba(155, 226, 43, 0.4);
           cursor: pointer;
@@ -264,10 +300,11 @@ export default function TecorbiIntro({ onComplete }) {
           background: #b5f547;
         }
 
-        @media (max-width: 640px) {
-          .tecorbi-stage-box {
+        @media (max-width: 560px) {
+          .tecorbi-stage-box-mobile {
             border-radius: 14px;
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15), 0 16px 45px rgba(42, 60, 255, 0.38);
+            width: min(calc(100vw - 20px), calc((100vh - 110px) * 9 / 16));
+            height: min(calc(100vh - 110px), calc((100vw - 20px) * 16 / 9));
           }
           .tecorbi-intro-brand-tag {
             font-size: 11px;
@@ -275,7 +312,7 @@ export default function TecorbiIntro({ onComplete }) {
           }
           .tecorbi-intro-btn {
             font-size: 11px;
-            padding: 6px 12px;
+            padding: 5px 12px;
           }
           .btn-launch-game-intro {
             font-size: 13px;
@@ -297,16 +334,16 @@ export default function TecorbiIntro({ onComplete }) {
           className="tecorbi-intro-btn"
           aria-label={isMuted ? 'تشغيل الصوت' : 'كتم الصوت'}
         >
-          {isMuted ? '🔇 تشغيل الصوت' : '🔊 الصوت مفعل'}
+          {isMuted ? '🔇 تشغيل الصوت' : '🔊 الصوت شغال'}
         </button>
       </div>
 
-      {/* Center Stage: Exact 1344/768 ratio (Zero cropping, robot & logo 100% visible on all phones) */}
+      {/* Center Stage: Portrait (9:16) for mobile, Landscape (1344/768) for desktop */}
       <div className="tecorbi-stage-center">
-        <div className="tecorbi-stage-box">
+        <div className={isMobile ? "tecorbi-stage-box-mobile" : "tecorbi-stage-box-desktop"}>
           <video
             ref={setVideoRef}
-            src="/intro.mp4"
+            key={isMobile ? 'mobile-v' : 'desktop-v'}
             autoPlay
             muted
             playsInline
@@ -314,15 +351,27 @@ export default function TecorbiIntro({ onComplete }) {
             webkit-playsinline="true"
             x5-playsinline="true"
             controls={false}
-            poster="/images/intro-poster.jpg"
+            poster={isMobile ? "/intro-mobile-poster.jpg" : "/images/intro-poster.jpg"}
             onTimeUpdate={handleTimeUpdate}
             aria-label="TecOrbi Kids Arena intro"
             className="tecorbi-video-elem"
-          />
+          >
+            {isMobile ? (
+              <>
+                <source src="/intro-mobile.webm" type="video/webm" />
+                <source src="/intro-mobile.mp4" type="video/mp4" />
+              </>
+            ) : (
+              <>
+                <source src="/intro.webm" type="video/webm" />
+                <source src="/intro.mp4" type="video/mp4" />
+              </>
+            )}
+          </video>
         </div>
       </div>
 
-      {/* Bottom Row: Neon Progress Bar + Fast Launch Button */}
+      {/* Bottom Row: Neon Progress Bar + Launch Button */}
       <div className="tecorbi-intro-bottom-row">
         <div className="tecorbi-intro-progress-bar">
           <div
