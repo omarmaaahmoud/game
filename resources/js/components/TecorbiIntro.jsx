@@ -113,7 +113,7 @@ export default function TecorbiIntro({ onComplete }) {
         width: '100vw',
         height: '100dvh',
         zIndex: 99999,
-        backgroundColor: '#02030c',
+        background: 'radial-gradient(ellipse at 50% 50%, #0b1240 0%, #02030c 80%)',
         overflow: 'hidden',
         cursor: 'pointer',
         direction: 'rtl',
@@ -136,12 +136,18 @@ export default function TecorbiIntro({ onComplete }) {
           display: none !important;
         }
         .tecorbi-fs-video {
+          position: absolute;
+          inset: 0;
           width: 100%;
           height: 100%;
           display: block;
-          object-fit: cover;
-          background: #02030c;
+          object-fit: contain;
           pointer-events: none;
+        }
+        @media (min-aspect-ratio: 16/9) {
+          .tecorbi-fs-video {
+            object-fit: cover;
+          }
         }
         .tecorbi-intro-btn {
           font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif;
@@ -195,7 +201,30 @@ export default function TecorbiIntro({ onComplete }) {
         }
       `}</style>
 
-      {/* 100% Fullscreen Video */}
+      {/* Ambient Neon Atmosphere Glow Behind Video */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+        }}
+      >
+        <div
+          style={{
+            width: '90vw',
+            maxWidth: '1000px',
+            aspectRatio: '16/9',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(57, 37, 222, 0.35) 0%, rgba(155, 226, 43, 0.15) 50%, transparent 75%)',
+            filter: 'blur(50px)',
+          }}
+        />
+      </div>
+
+      {/* 100% Fullscreen Responsive Video */}
       <video
         ref={videoRef}
         playsInline
