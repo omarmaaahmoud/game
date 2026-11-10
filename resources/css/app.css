@@ -5717,94 +5717,61 @@ html, body {
   100% { transform: scale(1.15) translate(15px, -15px); opacity: 0.9; }
 }
 
-/* Corner-Anchored Cyber SVG Containers (Strictly in Margins, Never Overlapping Content) */
-.cyber-corner-svg {
+/* Fullscreen Long Spanning Laser Highway Tracks (Responsive & Calibrated Clearance) */
+.cyber-circuit-svg {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
   z-index: 1;
 }
-.cyber-corner-tr {
-  top: 0;
-  right: 0;
-  width: 320px;
-  height: 280px;
+
+/* Long Moving Laser Pulses with Smooth Flow */
+.laser-long-run-1 {
+  stroke-dasharray: 65 605;
+  stroke-dashoffset: 670;
+  animation: laserLongRun1 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
-.cyber-corner-bl {
-  bottom: 0;
-  left: 0;
-  width: 320px;
-  height: 280px;
+.laser-long-run-2 {
+  stroke-dasharray: 55 575;
+  stroke-dashoffset: 630;
+  animation: laserLongRun2 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.8s;
+}
+.laser-long-run-3 {
+  stroke-dasharray: 60 605;
+  stroke-dashoffset: 665;
+  animation: laserLongRun3 4.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.laser-long-run-4 {
+  stroke-dasharray: 90 1410;
+  stroke-dashoffset: 1500;
+  animation: laserLongRun4 6.5s cubic-bezier(0.4, 0, 0.2, 1) infinite 1.2s;
 }
 
-@media (max-width: 900px) {
-  .cyber-corner-tr {
-    width: 200px;
-    height: 180px;
-  }
-  .cyber-corner-bl {
-    width: 200px;
-    height: 180px;
-  }
+@keyframes laserLongRun1 {
+  0% { stroke-dashoffset: 670; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { stroke-dashoffset: -80; opacity: 0; }
 }
-
-@media (max-width: 640px) {
-  .cyber-corner-tr {
-    width: 140px;
-    height: 120px;
-    opacity: 0.5;
-  }
-  .cyber-corner-bl {
-    width: 140px;
-    height: 120px;
-    opacity: 0.5;
-  }
+@keyframes laserLongRun2 {
+  0% { stroke-dashoffset: 630; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { stroke-dashoffset: -80; opacity: 0; }
 }
-
-/* Dynamic Smooth Laser Pulses (Corner Pathways) */
-.laser-pulse-run-1 {
-  stroke-dasharray: 40 260;
-  stroke-dashoffset: 300;
-  animation: laserCornerRun1 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+@keyframes laserLongRun3 {
+  0% { stroke-dashoffset: 665; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { stroke-dashoffset: -80; opacity: 0; }
 }
-.laser-pulse-run-2 {
-  stroke-dasharray: 45 250;
-  stroke-dashoffset: 295;
-  animation: laserCornerRun2 3.6s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.8s;
-}
-.laser-pulse-run-3 {
-  stroke-dasharray: 40 260;
-  stroke-dashoffset: 300;
-  animation: laserCornerRun3 3.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-.laser-pulse-run-4 {
-  stroke-dasharray: 45 250;
-  stroke-dashoffset: 295;
-  animation: laserCornerRun4 3.8s cubic-bezier(0.4, 0, 0.2, 1) infinite 1s;
-}
-
-@keyframes laserCornerRun1 {
-  0% { stroke-dashoffset: 300; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { stroke-dashoffset: -50; opacity: 0; }
-}
-@keyframes laserCornerRun2 {
-  0% { stroke-dashoffset: 295; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { stroke-dashoffset: -50; opacity: 0; }
-}
-@keyframes laserCornerRun3 {
-  0% { stroke-dashoffset: 300; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { stroke-dashoffset: -50; opacity: 0; }
-}
-@keyframes laserCornerRun4 {
-  0% { stroke-dashoffset: 295; opacity: 0; }
-  20% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { stroke-dashoffset: -50; opacity: 0; }
+@keyframes laserLongRun4 {
+  0% { stroke-dashoffset: 1500; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { stroke-dashoffset: -100; opacity: 0; }
 }
 
 /* Radar Pulse Rings */
