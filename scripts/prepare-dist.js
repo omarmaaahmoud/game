@@ -58,12 +58,10 @@ if (fs.existsSync(introFramesDeskDir)) {
 
 // 5. Copy any other public static files (ignoring build & index.php)
 fs.readdirSync(publicDir).forEach((item) => {
-  if (item !== 'build' && item !== 'index.php' && item !== 'models') {
+  if (item !== 'build' && item !== 'index.php' && item !== 'models' && item !== 'intro-frames' && item !== 'intro-frames-desktop') {
     const src = path.join(publicDir, item);
     const dest = path.join(distDir, item);
-    if (!fs.existsSync(dest)) {
-      fs.cpSync(src, dest, { recursive: true });
-    }
+    fs.cpSync(src, dest, { recursive: true, force: true });
   }
 });
 

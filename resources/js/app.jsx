@@ -104,6 +104,15 @@ const post = (url, body) => fetch(API + url, { method: 'POST', headers: { 'Conte
 const get = (url) => fetch(API + url, { headers: { Accept: 'application/json' } }).then(r => r.json());
 
 const AVATARS = [
+  {
+    id: 'spongebob',
+    name: 'سبونج بوب',
+    role: 'بطل قاع الهامور 🌟',
+    emoji: '🧽',
+    image: '/images/avatars/spongebob.png',
+    color: '#eab308',
+    is3D: true,
+  },
   { id: 'astronaut', emoji: '🧑🏻‍🚀', name: 'رائد فضاء', role: 'Space Cadet', color: '#38bdf8' },
   { id: 'ninja', emoji: '🥷', name: 'النينجا السريع', role: 'Shadow Ninja', color: '#1e293b' },
   { id: 'robot', emoji: '🤖', name: 'الروبوت الذكي', role: 'Cyber Bot', color: '#a855f7' },
@@ -119,6 +128,29 @@ const AVATARS = [
 ];
 
 const getAvatar = (id) => AVATARS.find(a => a.id === id) || AVATARS[0];
+
+function AvatarDisplay({ avatarId, className = '', style = {}, imgStyle = {} }) {
+  const a = getAvatar(avatarId);
+  if (a.image) {
+    return (
+      <img
+        src={a.image}
+        alt={a.name}
+        className={`avatar-img-inline ${className}`}
+        style={{
+          width: '1.35em',
+          height: '1.35em',
+          objectFit: 'contain',
+          verticalAlign: 'middle',
+          display: 'inline-block',
+          filter: 'drop-shadow(0 3px 6px rgba(234, 179, 8, 0.45))',
+          ...imgStyle,
+        }}
+      />
+    );
+  }
+  return <span className={className} style={style}>{a.emoji}</span>;
+}
 
 const SHAPES = [
   { symbol: '▲', color: 'red', name: 'A' },
@@ -363,7 +395,7 @@ function App() {
 
           {player && (
             <div className="player-hud-pill">
-              <span className="hud-emoji">{getAvatar(player.avatar).emoji}</span>
+              <span className="hud-emoji"><AvatarDisplay avatarId={player.avatar} /></span>
               <span className="hud-name">{player.name}</span>
               <span className="hud-score"><Zap size={14} fill="currentColor" /> {player.score || 0} XP</span>
             </div>
@@ -1076,7 +1108,7 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
           <div className="space-players-grid">
             {players.map(p => (
               <div key={p.id} className="space-player-bubble">
-                <span className="spb-emoji">{getAvatar(p.avatar).emoji}</span>
+                <span className="spb-emoji"><AvatarDisplay avatarId={p.avatar} /></span>
                 <span className="spb-name">{p.name}</span>
               </div>
             ))}
@@ -1345,7 +1377,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
               {leaderboard.map(p => (
                 <div key={p.id} className={`lrc-row rank-item-${p.rank}`}>
                   <span className={`rank-disc rank-${p.rank}`}>{p.rank}</span>
-                  <span className="player-avatar-small">{getAvatar(p.avatar).emoji}</span>
+                  <span className="player-avatar-small"><AvatarDisplay avatarId={p.avatar} /></span>
                   <span className="player-display-name">{p.name}</span>
                   <strong className="player-live-score">{p.score.toLocaleString()} XP</strong>
                 </div>
@@ -1364,7 +1396,7 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
   const [pin, setPin] = useState(initialPin);
   const [sessionInfo, setSessionInfo] = useState(null);
   const [name, setName] = useState('');
-  const [avatar, setAvatar] = useState('astronaut');
+  const [avatar, setAvatar] = useState('spongebob');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1427,10 +1459,21 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
             <button
               key={a.id}
               type="button"
-              className={`avatar-character-card-space ${avatar === a.id ? 'is-selected' : ''}`}
+              className={`avatar-character-card-space ${avatar === a.id ? 'is-selected' : ''} ${a.is3D ? 'card-is-3d-highlight' : ''}`}
               onClick={() => { sfx.play('click'); setAvatar(a.id); }}
             >
-              <span className="character-emoji">{a.emoji}</span>
+              {a.is3D && <span className="badge-3d-glow">3D ✨</span>}
+              {a.image ? (
+                <div className="avatar-3d-container">
+                  <img
+                    src={a.image}
+                    alt={a.name}
+                    className="avatar-3d-render-figure"
+                  />
+                </div>
+              ) : (
+                <span className="character-emoji">{a.emoji}</span>
+              )}
               <strong className="character-name">{a.name}</strong>
               <small className="character-role">{a.role}</small>
               {avatar === a.id && <span className="selection-star">⭐</span>}
@@ -1506,7 +1549,17 @@ function StudentLobby({ session, setMode, player }) {
       <CosmicDecorations />
       <div className="space-pin-glass-card wait-portal-card-space">
         <div className="wait-avatar-ring">
-          <span className="floating-avatar-giant">{getAvatar(player.avatar).emoji}</span>
+          {getAvatar(player.avatar).image ? (
+            <div className="floating-avatar-3d-wrap">
+              <img
+                src={getAvatar(player.avatar).image}
+                alt={getAvatar(player.avatar).name}
+                className="floating-avatar-giant-3d"
+              />
+            </div>
+          ) : (
+            <span className="floating-avatar-giant">{getAvatar(player.avatar).emoji}</span>
+          )}
           <div className="ring-pulse rp-1" />
           <div className="ring-pulse rp-2" />
         </div>
@@ -1883,7 +1936,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
               {midLeaderboard[1] ? (
                 <>
                   <div className="mid-pod-emoji-ring" style={{ borderColor: RANK_COLORS[1] }}>
-                    <span>{getAvatar(midLeaderboard[1].avatar).emoji}</span>
+                    <span><AvatarDisplay avatarId={midLeaderboard[1].avatar} /></span>
                   </div>
                   <span className="mid-pod-rank" style={{ background: RANK_COLORS[1] }}>🥈</span>
                   <strong className="mid-pod-name">{midLeaderboard[1].name}</strong>
@@ -1900,7 +1953,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
                 <>
                   <span className="mid-pod-crown">👑</span>
                   <div className="mid-pod-emoji-ring mid-ring-gold" style={{ borderColor: RANK_COLORS[0] }}>
-                    <span>{getAvatar(midLeaderboard[0].avatar).emoji}</span>
+                    <span><AvatarDisplay avatarId={midLeaderboard[0].avatar} /></span>
                   </div>
                   <span className="mid-pod-rank" style={{ background: RANK_COLORS[0], color: '#1e1b4b' }}>🥇</span>
                   <strong className="mid-pod-name mid-name-gold">{midLeaderboard[0].name}</strong>
@@ -1914,7 +1967,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
               {midLeaderboard[2] ? (
                 <>
                   <div className="mid-pod-emoji-ring" style={{ borderColor: RANK_COLORS[2] }}>
-                    <span>{getAvatar(midLeaderboard[2].avatar).emoji}</span>
+                    <span><AvatarDisplay avatarId={midLeaderboard[2].avatar} /></span>
                   </div>
                   <span className="mid-pod-rank" style={{ background: RANK_COLORS[2] }}>🥉</span>
                   <strong className="mid-pod-name">{midLeaderboard[2].name}</strong>
@@ -1936,7 +1989,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
               return (
                 <div key={p.id} className={`mid-list-row ${isMe ? 'mid-list-me' : ''}`}>
                   <span className="mlr-rank">#{rank}</span>
-                  <span className="mlr-emoji">{getAvatar(p.avatar).emoji}</span>
+                  <span className="mlr-emoji"><AvatarDisplay avatarId={p.avatar} /></span>
                   <span className="mlr-name">{p.name} {isMe && '⭐'}</span>
                   <strong className="mlr-score">{p.score.toLocaleString()} XP</strong>
                 </div>
@@ -1949,7 +2002,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         {myRank && myRank > 3 && (
           <div className="mid-board-my-position">
             <div className="mbmp-inner">
-              <span className="mbmp-emoji">{getAvatar(player.avatar).emoji}</span>
+              <span className="mbmp-emoji"><AvatarDisplay avatarId={player.avatar} /></span>
               <div className="mbmp-info">
                 <strong>أنت · {player.name}</strong>
                 <span>المركز #{myRank}</span>
@@ -2100,7 +2153,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
       {/* Bottom Floating Player Bar */}
       <div className="bottom-student-bar">
-        <div className="bsb-avatar">{getAvatar(player.avatar).emoji}</div>
+        <div className="bsb-avatar"><AvatarDisplay avatarId={player.avatar} /></div>
         <div className="bsb-info">
           <strong>{player.name}</strong>
           <span>{getAvatar(player.avatar).name}</span>
@@ -2393,7 +2446,11 @@ function Leaderboard({ session, setMode, player }) {
 
             <div className="hof-avatar-anchor">
               <div className="hof-avatar-circle circle-silver">
-                <span className="hof-avatar-emoji">{getAvatar(top2.avatar).emoji}</span>
+                {getAvatar(top2.avatar).image ? (
+                  <img src={getAvatar(top2.avatar).image} alt={top2.name} className="hof-avatar-3d-champ" />
+                ) : (
+                  <span className="hof-avatar-emoji">{getAvatar(top2.avatar).emoji}</span>
+                )}
               </div>
               <span className="hof-corner-pin pin-silver" title="Silver Medal">🥈</span>
             </div>
@@ -2431,7 +2488,11 @@ function Leaderboard({ session, setMode, player }) {
             <div className="hof-avatar-anchor">
               <div className="hof-avatar-circle circle-champion">
                 <span className="champion-gold-aura" />
-                <span className="hof-avatar-emoji emoji-champ">{getAvatar(top1.avatar).emoji}</span>
+                {getAvatar(top1.avatar).image ? (
+                  <img src={getAvatar(top1.avatar).image} alt={top1.name} className="hof-avatar-3d-champ" />
+                ) : (
+                  <span className="hof-avatar-emoji emoji-champ">{getAvatar(top1.avatar).emoji}</span>
+                )}
               </div>
               <span className="hof-corner-pin pin-gold" title="Gold Star">⭐</span>
             </div>
@@ -2472,7 +2533,11 @@ function Leaderboard({ session, setMode, player }) {
 
             <div className="hof-avatar-anchor">
               <div className="hof-avatar-circle circle-bronze">
-                <span className="hof-avatar-emoji">{getAvatar(top3.avatar).emoji}</span>
+                {getAvatar(top3.avatar).image ? (
+                  <img src={getAvatar(top3.avatar).image} alt={top3.name} className="hof-avatar-3d-champ" />
+                ) : (
+                  <span className="hof-avatar-emoji">{getAvatar(top3.avatar).emoji}</span>
+                )}
               </div>
               <span className="hof-corner-pin pin-bronze" title="Bronze Bolt">⚡</span>
             </div>
@@ -2558,7 +2623,7 @@ function Leaderboard({ session, setMode, player }) {
                   </div>
 
                   <div className="hcs-player-col">
-                    <div className="hcs-avatar-mini">{getAvatar(p.avatar).emoji}</div>
+                    <div className="hcs-avatar-mini"><AvatarDisplay avatarId={p.avatar} /></div>
                     <div className="hcs-names">
                       <strong>{p.name} {isMe && <span className="hcs-me-tag">أنت ⭐</span>}</strong>
                       <small>{p.role || getAvatar(p.avatar).role}</small>
