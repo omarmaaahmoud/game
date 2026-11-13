@@ -180,7 +180,153 @@ const SHAPES = [
   { symbol: '■', color: 'green', name: 'D' },
 ];
 
-/* ══════════════════════ TECORBI OFFICIAL BRAND ILLUSTRATIONS ══════════════════════ */
+/* ══════════════════════ 3D SPACE & TECORBI BRAND ILLUSTRATIONS ══════════════════════ */
+
+function SpacePlanet3D({ className = '', style = {} }) {
+  return (
+    <div className={`space-planet-3d ${className}`} style={style} aria-hidden="true">
+      <svg viewBox="0 0 160 160" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="planetGlowGrad" cx="30%" cy="28%" r="72%">
+            <stop offset="0%" stopColor="#d8b4fe" />
+            <stop offset="28%" stopColor="#9333ea" />
+            <stop offset="65%" stopColor="#581c87" />
+            <stop offset="100%" stopColor="#1e0a3d" />
+          </radialGradient>
+          <filter id="planetHalo" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="8" />
+            <feOffset dx="-2" dy="-2" result="offsetblur" />
+            <feFlood floodColor="#a855f7" floodOpacity="0.75" />
+            <feComposite in2="offsetblur" operator="in" />
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <radialGradient id="craterDeep" cx="35%" cy="35%" r="65%">
+            <stop offset="0%" stopColor="#2e1065" />
+            <stop offset="85%" stopColor="#1e0a3d" />
+            <stop offset="100%" stopColor="#7e22ce" />
+          </radialGradient>
+        </defs>
+        
+        {/* Ambient atmospheric purple glow */}
+        <circle cx="80" cy="80" r="74" fill="rgba(168, 85, 247, 0.25)" filter="url(#planetHalo)" />
+
+        {/* Planet Sphere */}
+        <circle cx="80" cy="80" r="70" fill="url(#planetGlowGrad)" />
+        
+        {/* Specular curved reflection */}
+        <ellipse cx="62" cy="52" rx="36" ry="22" fill="#ffffff" fillOpacity="0.14" transform="rotate(-25 62 52)" />
+        
+        {/* Large Crater */}
+        <g transform="translate(44, 58)">
+          <ellipse cx="18" cy="20" rx="16" ry="18" fill="url(#craterDeep)" />
+          <ellipse cx="18" cy="20" rx="16" ry="18" stroke="rgba(216, 180, 254, 0.45)" strokeWidth="2.5" fill="none" />
+          <ellipse cx="15" cy="18" rx="10" ry="11" fill="#150529" opacity="0.8" />
+          <ellipse cx="20" cy="22" rx="6" ry="7" fill="#7e22ce" opacity="0.4" />
+        </g>
+        
+        {/* Top-Right Crater */}
+        <g transform="translate(86, 28)">
+          <ellipse cx="12" cy="14" rx="11" ry="13" fill="url(#craterDeep)" />
+          <ellipse cx="12" cy="14" rx="11" ry="13" stroke="rgba(192, 132, 252, 0.5)" strokeWidth="2" fill="none" />
+          <ellipse cx="10" cy="12" rx="6" ry="8" fill="#150529" opacity="0.75" />
+        </g>
+        
+        {/* Bottom Crater */}
+        <g transform="translate(78, 104)">
+          <ellipse cx="14" cy="12" rx="14" ry="10" fill="url(#craterDeep)" />
+          <ellipse cx="14" cy="12" rx="14" ry="10" stroke="rgba(168, 85, 247, 0.4)" strokeWidth="1.8" fill="none" />
+          <ellipse cx="12" cy="11" rx="8" ry="6" fill="#150529" opacity="0.7" />
+        </g>
+
+        {/* Craters near rim */}
+        <circle cx="42" cy="112" r="5" fill="#2e1065" stroke="rgba(192, 132, 252, 0.3)" strokeWidth="1" />
+        <circle cx="124" cy="74" r="6" fill="#1e0a3d" stroke="rgba(168, 85, 247, 0.35)" strokeWidth="1" />
+        <circle cx="112" cy="98" r="4" fill="#2e1065" />
+      </svg>
+    </div>
+  );
+}
+
+function SpaceRocket3D({ className = '', style = {} }) {
+  return (
+    <div className={`space-rocket-3d ${className}`} style={style} aria-hidden="true">
+      <svg viewBox="0 0 170 190" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="rocketBodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="45%" stopColor="#f1f5f9" />
+            <stop offset="80%" stopColor="#cbd5e1" />
+            <stop offset="100%" stopColor="#94a3b8" />
+          </linearGradient>
+          <linearGradient id="rocketRedGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#fb7185" />
+            <stop offset="50%" stopColor="#f43f5e" />
+            <stop offset="100%" stopColor="#be123c" />
+          </linearGradient>
+          <linearGradient id="rocketGlassGrad" x1="15%" y1="15%" x2="90%" y2="90%">
+            <stop offset="0%" stopColor="#a5f3fc" />
+            <stop offset="45%" stopColor="#38bdf8" />
+            <stop offset="100%" stopColor="#0369a1" />
+          </linearGradient>
+          <linearGradient id="thrusterFireGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop offset="0%" stopColor="#ffffff" />
+            <stop offset="25%" stopColor="#fef08a" />
+            <stop offset="55%" stopColor="#f97316" />
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
+          </linearGradient>
+          <filter id="rocketFireGlow" x="-35%" y="-35%" width="170%" height="170%">
+            <feGaussianBlur stdDeviation="6" result="glow" />
+            <feMerge>
+              <feMergeNode in="glow" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        <g transform="rotate(24 85 95)">
+          {/* Cosmic smoke cloud puffs */}
+          <ellipse cx="62" cy="148" rx="18" ry="12" fill="#c084fc" fillOpacity="0.35" filter="blur(6px)" />
+          <ellipse cx="106" cy="150" rx="19" ry="13" fill="#e879f9" fillOpacity="0.3" filter="blur(6px)" />
+          <ellipse cx="84" cy="158" rx="22" ry="14" fill="#ddd6fe" fillOpacity="0.25" filter="blur(7px)" />
+
+          {/* Engine Exhaust Flame (Animated) */}
+          <g className="engine-flame-pulsing">
+            <path d="M72 126 C72 158, 84 182, 84 182 C84 182, 96 158, 96 126 Z" fill="url(#thrusterFireGrad)" filter="url(#rocketFireGlow)" />
+            <path d="M77 126 C77 148, 84 165, 84 165 C84 165, 91 148, 91 126 Z" fill="#ffffff" />
+          </g>
+
+          {/* Left Wing / Fin */}
+          <path d="M60 92 C46 106, 42 126, 44 130 C52 130, 68 120, 70 114 Z" fill="url(#rocketRedGrad)" />
+          {/* Right Wing / Fin */}
+          <path d="M108 92 C122 106, 126 126, 124 130 C116 130, 100 120, 98 114 Z" fill="url(#rocketRedGrad)" />
+
+          {/* Engine Base / Nozzle */}
+          <path d="M72 120 L96 120 L92 128 L76 128 Z" fill="#334155" />
+
+          {/* Main Fuselage */}
+          <path d="M84 18 C67 44, 61 78, 65 120 C73 122, 95 122, 103 120 C107 78, 101 44, 84 18 Z" fill="url(#rocketBodyGrad)" />
+
+          {/* Red Nose Cone */}
+          <path d="M84 18 C77 32, 72 46, 70 56 C78 58, 90 58, 98 56 C96 46, 91 32, 84 18 Z" fill="url(#rocketRedGrad)" />
+
+          {/* Cockpit Window Rim */}
+          <circle cx="84" cy="74" r="16" fill="#1e293b" />
+          <circle cx="84" cy="74" r="13" fill="#e2e8f0" />
+          {/* Cockpit Glass Visor */}
+          <circle cx="84" cy="74" r="11" fill="url(#rocketGlassGrad)" />
+          {/* Specular Visor Highlight */}
+          <ellipse cx="81" cy="70" rx="4" ry="2.5" fill="#ffffff" fillOpacity="0.85" transform="rotate(-30 81 70)" />
+
+          {/* Center Spine Fin */}
+          <path d="M83 88 L85 88 L86 121 L82 121 Z" fill="url(#rocketRedGrad)" opacity="0.9" />
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 /* Official Tecorbi Robot Mascot (From Workbook: Friendly, White/Indigo, Smiling Green Visor Eyes, Waving) */
 function TecorbiRobot3D({ className = '', style = {} }) {
@@ -676,15 +822,64 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
   async function launchDemoTeacher() {
     sfx.play('click');
     try {
-      let data = await get('/sessions/123456');
-      if (data.status === 'completed') {
-        await post('/sessions/123456/reset');
+      let data;
+      try {
         data = await get('/sessions/123456');
+        if (data.status === 'completed') {
+          await post('/sessions/123456/reset');
+          data = await get('/sessions/123456');
+        }
+      } catch {
+        // If 123456 doesn't exist on server, create a ready demo quiz dynamically
+        const created = await post('/sessions', {
+          title: 'تحدي أذكياء المستقبل 🌟',
+          teacher_name: 'الأستاذ أحمد',
+          questions: [
+            {
+              question_text: 'How many planets are in our solar system?',
+              question_text_ar: 'كم عدد الكواكب في مجموعتنا الشمسية؟',
+              time_limit: 20,
+              choices: [
+                { choice_text: '7 planets', choice_text_ar: '٧ كواكب', is_correct: false },
+                { choice_text: '8 planets', choice_text_ar: '٨ كواكب', is_correct: true },
+                { choice_text: '9 planets', choice_text_ar: '٩ كواكب', is_correct: false },
+                { choice_text: '10 planets', choice_text_ar: '١٠ كواكب', is_correct: false },
+              ],
+            },
+            {
+              question_text: 'What is 8 multiplied by 7?',
+              question_text_ar: 'ما حاصل ضرب ٨ × ٧؟',
+              time_limit: 15,
+              choices: [
+                { choice_text: '54', choice_text_ar: '٥٤', is_correct: false },
+                { choice_text: '56', choice_text_ar: '٥٦', is_correct: true },
+                { choice_text: '48', choice_text_ar: '٤٨', is_correct: false },
+                { choice_text: '64', choice_text_ar: '٦٤', is_correct: false },
+              ],
+            },
+            {
+              question_text: 'Which organ pumps blood through the human body?',
+              question_text_ar: 'ما العضو الذي يضخ الدم في جسم الإنسان؟',
+              time_limit: 20,
+              choices: [
+                { choice_text: 'The Lungs', choice_text_ar: 'الرئتان', is_correct: false },
+                { choice_text: 'The Brain', choice_text_ar: 'المخ', is_correct: false },
+                { choice_text: 'The Heart', choice_text_ar: 'القلب', is_correct: true },
+                { choice_text: 'The Stomach', choice_text_ar: 'المعدة', is_correct: false },
+              ],
+            },
+          ],
+        });
+        data = created;
       }
-      setSession(data);
+      const sessionObj = data?.session || data?.data?.session || data?.data || data;
+      const pin = String(data?.pin || data?.session?.pin || sessionObj?.pin || '');
+      setSession({ ...sessionObj, pin });
       setMode('teacher-lobby');
+      sfx.play('join');
       setNotice('🚀 تم فتح لوحة تحكم المعلم للمسابقة التجريبية جاهزة للاستخدام!');
-    } catch {
+    } catch (e) {
+      console.error('Launch demo error:', e);
       setNotice('تعذر تحميل السيشن التجريبي');
     }
   }
@@ -847,11 +1042,18 @@ function TeacherCreate({ setMode, setSession, setNotice }) {
           choices: q.choices.filter(c => c.choice_text.trim()),
         })),
       });
-      setSession(data.session);
+      const sessionObj = data?.session || data?.data?.session || data?.data || data;
+      const sessionPin = String(data?.pin || data?.session?.pin || data?.data?.pin || sessionObj?.pin || '');
+      const fullSession = {
+        ...sessionObj,
+        pin: sessionPin,
+      };
+      setSession(fullSession);
       setMode('teacher-lobby');
       sfx.play('join');
-      setNotice(`🎉 تم إنشاء المسابقة بنجاح! كود الـ PIN: ${data.pin}`);
+      setNotice(`🎉 تم إنشاء المسابقة بنجاح! كود الـ PIN: ${sessionPin}`);
     } catch (e) {
+      console.error('Create session error:', e);
       setNotice('حدث خطأ أثناء إنشاء المسابقة');
     }
     setLoading(false);
