@@ -3622,7 +3622,7 @@ body {
   font-size: 11px;
 }
 
-/* ── Avatar Image Cards (Unified) ── */
+/* ── Avatar Image Cards (Unified - Static) ── */
 .avatar-img-container {
   position: relative;
   width: 68px;
@@ -3638,39 +3638,102 @@ body {
   height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.25));
-  animation: avatarFloat 3s ease-in-out infinite;
-  transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.35s ease;
+  transition: transform 0.3s ease, filter 0.3s ease;
   transform-origin: center bottom;
 }
 
 .avatar-character-card-space:hover .avatar-card-figure {
-  transform: translateY(-8px) scale(1.18) rotate(-2deg);
-  filter: drop-shadow(0 14px 20px rgba(0, 0, 0, 0.35));
+  transform: scale(1.1);
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.35));
 }
 
 .avatar-character-card-space.is-selected .avatar-card-figure {
-  transform: translateY(-5px) scale(1.14);
+  transform: scale(1.08);
 }
 
-.avatar-card-accessory {
+/* ── Close-up View (Step 2) ── */
+.avatar-closeup-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  animation: fadeScaleIn 0.4s ease;
+}
+
+@keyframes fadeScaleIn {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.avatar-closeup-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.closeup-img-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(57, 37, 222, 0.08) 0%, transparent 70%);
+  border-radius: 50%;
+  padding: 16px;
+}
+
+.closeup-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.3));
+}
+
+.closeup-emoji-wrap {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(57, 37, 222, 0.08) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.closeup-avatar-emoji {
+  font-size: 90px;
+  line-height: 1;
+}
+
+.closeup-accessory {
   position: absolute;
-  top: -6px;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 22px;
+  font-size: 44px;
   z-index: 5;
   pointer-events: none;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  animation: avatarFloat 3s ease-in-out infinite;
+  text-shadow: 0 3px 10px rgba(0,0,0,0.4);
 }
 
-@keyframes avatarFloat {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg) scale(1);
-  }
-  50% {
-    transform: translateY(-5px) rotate(2deg) scale(1.05);
-  }
+.btn-change-avatar {
+  background: none;
+  border: 2px solid rgba(57, 37, 222, 0.25);
+  color: #3925DE;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+
+.btn-change-avatar:hover {
+  background: rgba(57, 37, 222, 0.08);
+  border-color: #3925DE;
 }
 
 /* Avatar in Student Waiting Lobby */
@@ -3687,17 +3750,6 @@ body {
   height: 85px;
   object-fit: contain;
   filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.4));
-  animation: lobbyFloat 3.5s ease-in-out infinite;
-}
-
-@keyframes lobbyFloat {
-  0%, 100% {
-    transform: translateY(0) rotate(-1deg) scale(1);
-  }
-  50% {
-    transform: translateY(-10px) rotate(2deg) scale(1.08);
-    filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.5));
-  }
 }
 
 /* Hall of Fame Champion Avatar */
@@ -3706,7 +3758,6 @@ body {
   height: 78%;
   object-fit: contain;
   filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.45));
-  animation: lobbyFloat 3s ease-in-out infinite;
 }
 
 .avatar-img-inline {
