@@ -104,15 +104,9 @@ const post = (url, body) => fetch(API + url, { method: 'POST', headers: { 'Conte
 const get = (url) => fetch(API + url, { headers: { Accept: 'application/json' } }).then(r => r.json());
 
 const AVATARS = [
-  {
-    id: 'spongebob',
-    name: 'سبونج بوب',
-    role: 'بطل قاع الهامور 🌟',
-    emoji: '🧽',
-    image: '/images/avatars/spongebob.png',
-    color: '#eab308',
-    is3D: true,
-  },
+  { id: 'spongebob', name: 'سبونج بوب', role: 'بطل قاع الهامور 🌟', emoji: '🧽', image: '/images/avatars/spongebob.png', color: '#eab308' },
+  { id: 'smurf', name: 'سنفور', role: 'قرية السنافر 💙', emoji: '🔵', image: '/images/avatars/smurf.png', color: '#38bdf8' },
+  { id: 'patrick', name: 'بسيط', role: 'نجم البحر ⭐', emoji: '⭐', image: '/images/avatars/patrick.png', color: '#f87171' },
   { id: 'astronaut', emoji: '🧑🏻‍🚀', name: 'رائد فضاء', role: 'Space Cadet', color: '#38bdf8' },
   { id: 'ninja', emoji: '🥷', name: 'النينجا السريع', role: 'Shadow Ninja', color: '#1e293b' },
   { id: 'robot', emoji: '🤖', name: 'الروبوت الذكي', role: 'Cyber Bot', color: '#a855f7' },
@@ -129,27 +123,54 @@ const AVATARS = [
 
 const getAvatar = (id) => AVATARS.find(a => a.id === id) || AVATARS[0];
 
-function AvatarDisplay({ avatarId, className = '', style = {}, imgStyle = {} }) {
+const ACCESSORIES = [
+  { id: 'none', name: 'بدون', emoji: '❌', category: 'all' },
+  { id: 'crown', name: 'تاج ذهبي', emoji: '👑', category: 'hat' },
+  { id: 'cap', name: 'طاقية', emoji: '🧢', category: 'hat' },
+  { id: 'tophat', name: 'قبعة سحرية', emoji: '🎩', category: 'hat' },
+  { id: 'party-hat', name: 'قبعة حفلة', emoji: '🥳', category: 'hat' },
+  { id: 'glasses', name: 'نظارة شمس', emoji: '🕶️', category: 'face' },
+  { id: 'mask', name: 'قناع بطل', emoji: '🦸', category: 'face' },
+  { id: 'star', name: 'نجمة', emoji: '⭐', category: 'face' },
+  { id: 'heart', name: 'قلب', emoji: '❤️', category: 'face' },
+  { id: 'fire', name: 'نار', emoji: '🔥', category: 'face' },
+];
+
+function AvatarDisplay({ avatarId, className = '', style = {}, imgStyle = {}, accessory = 'none' }) {
   const a = getAvatar(avatarId);
+  const acc = ACCESSORIES.find(x => x.id === accessory);
+  const overlay = acc && acc.id !== 'none' ? (
+    <span className="avatar-accessory-overlay" style={{ position: 'absolute', top: acc.category === 'hat' ? '-0.35em' : '0.1em', left: '50%', transform: 'translateX(-50%)', fontSize: '0.7em', zIndex: 3, pointerEvents: 'none', textShadow: '0 2px 6px rgba(0,0,0,0.35)' }}>
+      {acc.emoji}
+    </span>
+  ) : null;
+
   if (a.image) {
     return (
-      <img
-        src={a.image}
-        alt={a.name}
-        className={`avatar-img-inline ${className}`}
-        style={{
-          width: '1.35em',
-          height: '1.35em',
-          objectFit: 'contain',
-          verticalAlign: 'middle',
-          display: 'inline-block',
-          filter: 'drop-shadow(0 3px 6px rgba(234, 179, 8, 0.45))',
-          ...imgStyle,
-        }}
-      />
+      <span style={{ position: 'relative', display: 'inline-block', width: '1.35em', height: '1.35em' }}>
+        <img
+          src={a.image}
+          alt={a.name}
+          className={`avatar-img-inline ${className}`}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'contain',
+            verticalAlign: 'middle',
+            display: 'inline-block',
+            ...imgStyle,
+          }}
+        />
+        {overlay}
+      </span>
     );
   }
-  return <span className={className} style={style}>{a.emoji}</span>;
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <span className={className} style={style}>{a.emoji}</span>
+      {overlay}
+    </span>
+  );
 }
 
 const SHAPES = [
@@ -1397,6 +1418,7 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
   const [sessionInfo, setSessionInfo] = useState(null);
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('spongebob');
+  const [accessory, setAccessory] = useState('none');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1459,26 +1481,57 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
             <button
               key={a.id}
               type="button"
-              className={`avatar-character-card-space ${avatar === a.id ? 'is-selected' : ''} ${a.is3D ? 'card-is-3d-highlight' : ''}`}
+              className={`avatar-character-card-space ${avatar === a.id ? 'is-selected' : ''}`}
               onClick={() => { sfx.play('click'); setAvatar(a.id); }}
             >
-              {a.is3D && <span className="badge-3d-glow">3D ✨</span>}
               {a.image ? (
-                <div className="avatar-3d-container">
+                <div className="avatar-img-container">
                   <img
                     src={a.image}
                     alt={a.name}
-                    className="avatar-3d-render-figure"
+                    className="avatar-card-figure"
                   />
+                  {accessory !== 'none' && (
+                    <span className="avatar-card-accessory">
+                      {ACCESSORIES.find(x => x.id === accessory)?.emoji}
+                    </span>
+                  )}
                 </div>
               ) : (
-                <span className="character-emoji">{a.emoji}</span>
+                <span className="character-emoji" style={{ position: 'relative' }}>
+                  {a.emoji}
+                  {accessory !== 'none' && avatar === a.id && (
+                    <span className="avatar-card-accessory">
+                      {ACCESSORIES.find(x => x.id === accessory)?.emoji}
+                    </span>
+                  )}
+                </span>
               )}
               <strong className="character-name">{a.name}</strong>
               <small className="character-role">{a.role}</small>
               {avatar === a.id && <span className="selection-star">⭐</span>}
             </button>
           ))}
+        </div>
+
+        {/* ── Accessories Section ── */}
+        <div className="accessories-section">
+          <h3 className="accessories-title">اكسسورات 🎭</h3>
+          <p className="accessories-subtitle">البس بطلك اكسسوار مميز!</p>
+          <div className="accessories-grid">
+            {ACCESSORIES.map(acc => (
+              <button
+                key={acc.id}
+                type="button"
+                className={`accessory-btn ${accessory === acc.id ? 'acc-selected' : ''}`}
+                onClick={() => { sfx.play('click'); setAccessory(acc.id); }}
+                title={acc.name}
+              >
+                <span className="acc-emoji">{acc.emoji}</span>
+                <span className="acc-name">{acc.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="player-name-field-space">
