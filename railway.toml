@@ -1,0 +1,4 @@
+[deployment]
+healthcheckPath = "/"
+healthcheckTimeout = 300
+startCommand = "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"
