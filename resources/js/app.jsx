@@ -100,8 +100,8 @@ const getMobileUrl = () => {
 
 /* ── API helpers ── */
 const API = '/api';
-const post = (url, body) => fetch(API + url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
-const get = (url) => fetch(API + url, { headers: { Accept: 'application/json' } }).then(r => r.json());
+const post = (url, body) => fetch(API + url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+const get = (url) => fetch(API + url, { headers: { Accept: 'application/json' } }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
 
 const AVATARS = [
   { id: 'spongebob', name: 'سبونج بوب', role: 'بطل قاع الهامور 🌟', emoji: '🧽', image: '/images/avatars/spongebob.png', color: '#eab308' },
@@ -1449,14 +1449,16 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
     setLoading(true);
     sfx.play('click');
     try {
-      const data = await post(`/sessions/${pin}/join`, { name: name.trim(), avatar });
+      const data = await post(`/sessions/${pin}/join`, { name: name.trim(), avatar, accessory });
+      if (!data || !data.player) { setNotice('❌ حدث خطأ غير متوقع. حاول مرة أخرى'); setLoading(false); return; }
       setPlayer(data.player);
       setSession({ ...sessionInfo, pin });
       setMode('student-lobby');
       sfx.play('win');
       setNotice(`مرحباً يا بطل! تم انضمامك للمسابقة بنجاح 🎉`);
-    } catch {
-      setNotice('حدث خطأ أثناء الانضمام للمسابقة');
+    } catch (e) {
+      console.error('Join error:', e);
+      setNotice('حدث خطأ أثناء الانضمام للمسابقة. تأكد من الاتصال بالسيرفر');
     }
     setLoading(false);
   }
