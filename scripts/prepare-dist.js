@@ -89,5 +89,14 @@ const indexHtmlContent = `<!doctype html>
 `;
 
 fs.writeFileSync(path.join(distDir, 'index.html'), indexHtmlContent, 'utf-8');
+
+// 7. Copy vercel.json to dist (without outputDirectory since dist IS the output)
+const vercelConfig = path.join(rootDir, 'vercel.json');
+if (fs.existsSync(vercelConfig)) {
+  const vc = JSON.parse(fs.readFileSync(vercelConfig, 'utf-8'));
+  delete vc.outputDirectory;
+  fs.writeFileSync(path.join(distDir, 'vercel.json'), JSON.stringify(vc, null, 2), 'utf-8');
+}
+
 console.log('✓ Successfully prepared dist/ for Vercel deployment with index.html, assets, and 3D models.');
 
