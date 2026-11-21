@@ -7,7 +7,24 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GameSession extends Model
 {
-    protected $fillable = ['pin', 'teacher_name', 'title', 'status', 'current_question_index', 'question_state'];
+    protected $fillable = [
+        'pin',
+        'teacher_name',
+        'title',
+        'status',
+        'current_question_index',
+        'question_state',
+        'question_started_at',
+        'state_version',
+        'question_paused_remaining_ms',
+    ];
+
+    protected $casts = [
+        'question_started_at' => 'integer',
+        'state_version' => 'integer',
+        'question_paused_remaining_ms' => 'integer',
+        'current_question_index' => 'integer',
+    ];
 
     public function questions(): HasMany
     {
@@ -33,4 +50,3 @@ class GameSession extends Model
         return $pin;
     }
 }
-
