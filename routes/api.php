@@ -25,6 +25,6 @@ Route::post('/sessions/{pin}/answer', [GameController::class, 'answer']);
 Route::get('/sessions/{pin}/leaderboard', [GameController::class, 'leaderboard']);
 Route::get('/sessions/{pin}/results', [GameController::class, 'results']);
 
-// Polling
+// Polling & state synchronization
 Route::get('/sessions/{pin}/poll', [SessionController::class, 'poll']);
-
+Route::get('/sessions/{pin}/state', [SessionController::class, 'state']);

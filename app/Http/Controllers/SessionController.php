@@ -127,83 +127,164 @@ class SessionController extends Controller
 
         return response()->json([
             'players' => $session->players()->get(['id', 'name', 'avatar', 'score', 'streak']),
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
     // Teacher starts the game
     public function start(string $pin): JsonResponse
     {
-        $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update(['status' => 'active', 'current_question_index' => 0, 'question_state' => 'answering']);
+        return DB::transaction(function () use ($pin) {
+            $session = GameSession::where('pin', $pin)->lockForUpdate()->firstOrFail();
+            $nowMs = (int) round(microtime(true) * 1000);
+            $leadMs = config('quiz.sync_lead_ms', 2000);
+            $startedAt = $nowMs + $leadMs;
 
-        $firstQuestion = $session->questions()->with('choices')->orderBy('order')->first();
-        $formattedQ = $firstQuestion ? [
-            'id' => $firstQuestion->id,
-            'question_text' => $firstQuestion->question_text,
-            'question_text_ar' => $firstQuestion->question_text_ar,
-            'time_limit' => $firstQuestion->time_limit,
-            'order' => $firstQuestion->order,
-            'choices' => $firstQuestion->choices->map(fn ($c) => [
-                'id' => $c->id,
-                'choice_text' => $c->choice_text,
-                'choice_text_ar' => $c->choice_text_ar,
-                'order' => $c->order,
-            ])->values()->all(),
-        ] : null;
+            $session->update([
+                'status' => 'active',
+                'current_question_index' => 0,
+                'question_state' => 'answering',
+                'question_started_at' => $startedAt,
+                'question_paused_remaining_ms' => null,
+                'state_version' => $session->state_version + 1,
+            ]);
 
-        $totalQuestions = $session->questions()->count();
+            $firstQuestion = $session->questions()->with('choices')->orderBy('order')->first();
+            $formattedQ = $firstQuestion ? [
+                'id' => $firstQuestion->id,
+                'question_text' => $firstQuestion->question_text,
+                'question_text_ar' => $firstQuestion->question_text_ar,
+                'time_limit' => $firstQuestion->time_limit,
+                'order' => $firstQuestion->order,
+                'choices' => $firstQuestion->choices->map(fn ($c) => [
+                    'id' => $c->id,
+                    'choice_text' => $c->choice_text,
+                    'choice_text_ar' => $c->choice_text_ar,
+                    'order' => $c->order,
+                ])->values()->all(),
+            ] : null;
 
-        broadcast(new GameStarted($session->pin, $formattedQ, $totalQuestions, 0));
+            $totalQuestions = $session->questions()->count();
 
-        return response()->json(['status' => 'active', 'current_question_index' => 0, 'question_state' => 'answering']);
+            broadcast(new GameStarted($session->pin, $formattedQ, $totalQuestions, 0));
+
+            return response()->json([
+                'status' => 'active',
+                'current_question_index' => 0,
+                'question_state' => 'answering',
+                'question_started_at' => $startedAt,
+                'state_version' => $session->state_version,
+                'server_now_ms' => (int) round(microtime(true) * 1000),
+            ]);
+        });
     }
 
     // Teacher advances to next question
-    public function next(string $pin): JsonResponse
+    public function next(Request $request, string $pin): JsonResponse
     {
-        $session = GameSession::where('pin', $pin)->firstOrFail();
-        $allQuestions = $session->questions()->with('choices')->orderBy('order')->get();
-        $totalQuestions = $allQuestions->count();
-        $nextIndex = $session->current_question_index + 1;
+        return DB::transaction(function () use ($request, $pin) {
+            $session = GameSession::where('pin', $pin)->lockForUpdate()->firstOrFail();
+            $allQuestions = $session->questions()->with('choices')->orderBy('order')->get();
+            $totalQuestions = $allQuestions->count();
+            $nowMs = (int) round(microtime(true) * 1000);
 
-        if ($nextIndex >= $totalQuestions) {
-            $session->update(['status' => 'completed', 'question_state' => 'revealed']);
-            broadcast(new GameFinished($session->pin));
-            return response()->json(['status' => 'completed', 'message' => 'All questions done']);
-        }
+            // Idempotency guard 1: caller expected_index mismatch
+            $expectedIndex = $request->input('expected_index');
+            if ($expectedIndex !== null && (int) $expectedIndex !== (int) $session->current_question_index) {
+                return response()->json([
+                    'status' => $session->status,
+                    'current_question_index' => $session->current_question_index,
+                    'total_questions' => $totalQuestions,
+                    'question_state' => $session->question_state,
+                    'question_started_at' => $session->question_started_at,
+                    'state_version' => $session->state_version,
+                    'server_now_ms' => $nowMs,
+                ]);
+            }
 
-        $session->update(['current_question_index' => $nextIndex, 'status' => 'active', 'question_state' => 'answering']);
-        $nextQuestion = $allQuestions->get($nextIndex);
+            // Idempotency guard 2: rapid double click within 800ms
+            if ($session->question_started_at !== null &&
+                $session->question_state === 'answering' &&
+                abs($nowMs - $session->question_started_at) < 800) {
+                return response()->json([
+                    'status' => $session->status,
+                    'current_question_index' => $session->current_question_index,
+                    'total_questions' => $totalQuestions,
+                    'question_state' => $session->question_state,
+                    'question_started_at' => $session->question_started_at,
+                    'state_version' => $session->state_version,
+                    'server_now_ms' => $nowMs,
+                ]);
+            }
 
-        $formattedQ = $nextQuestion ? [
-            'id' => $nextQuestion->id,
-            'question_text' => $nextQuestion->question_text,
-            'question_text_ar' => $nextQuestion->question_text_ar,
-            'time_limit' => $nextQuestion->time_limit,
-            'order' => $nextQuestion->order,
-            'choices' => $nextQuestion->choices->map(fn ($c) => [
-                'id' => $c->id,
-                'choice_text' => $c->choice_text,
-                'choice_text_ar' => $c->choice_text_ar,
-                'order' => $c->order,
-            ])->values()->all(),
-        ] : [];
+            $nextIndex = $session->current_question_index + 1;
 
-        broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions));
+            if ($nextIndex >= $totalQuestions) {
+                $session->update([
+                    'status' => 'completed',
+                    'question_state' => 'revealed',
+                    'question_started_at' => null,
+                    'question_paused_remaining_ms' => null,
+                    'state_version' => $session->state_version + 1,
+                ]);
+                broadcast(new GameFinished($session->pin));
+                return response()->json([
+                    'status' => 'completed',
+                    'message' => 'All questions done',
+                    'state_version' => $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
 
-        return response()->json([
-            'status' => 'active',
-            'current_question_index' => $nextIndex,
-            'total_questions' => $totalQuestions,
-            'question_state' => 'answering',
-        ]);
+            $leadMs = config('quiz.sync_lead_ms', 2000);
+            $startedAt = $nowMs + $leadMs;
+
+            $session->update([
+                'current_question_index' => $nextIndex,
+                'status' => 'active',
+                'question_state' => 'answering',
+                'question_started_at' => $startedAt,
+                'question_paused_remaining_ms' => null,
+                'state_version' => $session->state_version + 1,
+            ]);
+            $nextQuestion = $allQuestions->get($nextIndex);
+
+            $formattedQ = $nextQuestion ? [
+                'id' => $nextQuestion->id,
+                'question_text' => $nextQuestion->question_text,
+                'question_text_ar' => $nextQuestion->question_text_ar,
+                'time_limit' => $nextQuestion->time_limit,
+                'order' => $nextQuestion->order,
+                'choices' => $nextQuestion->choices->map(fn ($c) => [
+                    'id' => $c->id,
+                    'choice_text' => $c->choice_text,
+                    'choice_text_ar' => $c->choice_text_ar,
+                    'order' => $c->order,
+                ])->values()->all(),
+            ] : [];
+
+            broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions));
+
+            return response()->json([
+                'status' => 'active',
+                'current_question_index' => $nextIndex,
+                'total_questions' => $totalQuestions,
+                'question_state' => 'answering',
+                'question_started_at' => $startedAt,
+                'state_version' => $session->state_version,
+                'server_now_ms' => (int) round(microtime(true) * 1000),
+            ]);
+        });
     }
 
     // Teacher reveals the correct answer
     public function reveal(string $pin): JsonResponse
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update(['question_state' => 'revealed']);
+        $session->update([
+            'question_state' => 'revealed',
+            'state_version' => $session->state_version + 1,
+        ]);
 
         $currentQuestion = $session->currentQuestion();
         $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
@@ -214,6 +295,8 @@ class SessionController extends Controller
         return response()->json([
             'question_state' => 'revealed',
             'correct_choice_id' => $correctChoiceId,
+            'state_version' => $session->state_version,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
@@ -221,27 +304,77 @@ class SessionController extends Controller
     public function pause(string $pin): JsonResponse
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update(['status' => 'paused']);
-        return response()->json(['status' => 'paused']);
+        $nowMs = (int) round(microtime(true) * 1000);
+        $currentQuestion = $session->currentQuestion();
+        $durationMs = ($currentQuestion?->time_limit ?: 20) * 1000;
+
+        $remainingMs = null;
+        if ($session->question_started_at !== null) {
+            $elapsedMs = max(0, $nowMs - $session->question_started_at);
+            $remainingMs = max(0, $durationMs - $elapsedMs);
+        }
+
+        $session->update([
+            'status' => 'paused',
+            'question_paused_remaining_ms' => $remainingMs,
+            'state_version' => $session->state_version + 1,
+        ]);
+
+        return response()->json([
+            'status' => 'paused',
+            'question_paused_remaining_ms' => $remainingMs,
+            'state_version' => $session->state_version,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
+        ]);
     }
 
     // Teacher resumes
     public function resume(string $pin): JsonResponse
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update(['status' => 'active']);
-        return response()->json(['status' => 'active']);
+        $nowMs = (int) round(microtime(true) * 1000);
+        $currentQuestion = $session->currentQuestion();
+        $durationMs = ($currentQuestion?->time_limit ?: 20) * 1000;
+
+        $newStartedAt = $session->question_started_at;
+        if ($session->question_paused_remaining_ms !== null) {
+            $newStartedAt = $nowMs - ($durationMs - $session->question_paused_remaining_ms);
+        }
+
+        $session->update([
+            'status' => 'active',
+            'question_started_at' => $newStartedAt,
+            'question_paused_remaining_ms' => null,
+            'state_version' => $session->state_version + 1,
+        ]);
+
+        return response()->json([
+            'status' => 'active',
+            'question_started_at' => $newStartedAt,
+            'state_version' => $session->state_version,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
+        ]);
     }
 
     // Teacher ends game
     public function end(string $pin): JsonResponse
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update(['status' => 'completed', 'question_state' => 'revealed']);
+        $session->update([
+            'status' => 'completed',
+            'question_state' => 'revealed',
+            'question_started_at' => null,
+            'question_paused_remaining_ms' => null,
+            'state_version' => $session->state_version + 1,
+        ]);
 
         broadcast(new GameFinished($session->pin));
 
-        return response()->json(['status' => 'completed']);
+        return response()->json([
+            'status' => 'completed',
+            'state_version' => $session->state_version,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
+        ]);
     }
 
     // Teacher resets session to play again
@@ -257,6 +390,9 @@ class SessionController extends Controller
                 'status' => 'waiting',
                 'current_question_index' => 0,
                 'question_state' => 'answering',
+                'question_started_at' => null,
+                'question_paused_remaining_ms' => null,
+                'state_version' => $session->state_version + 1,
             ]);
         });
 
@@ -267,24 +403,25 @@ class SessionController extends Controller
             'status' => 'waiting',
             'message' => 'Session reset successfully',
             'session' => $session,
+            'state_version' => $session->state_version,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
-    // Polling endpoint (Fast eager loading for snappy realtime response)
-    public function poll(string $pin): JsonResponse
+    // Helper to serialize session state consistently
+    private function serializeSessionState(GameSession $session): array
     {
-        $session = GameSession::where('pin', $pin)
-            ->with(['questions.choices', 'players'])
-            ->firstOrFail();
-
         $allQuestions = $session->questions;
         $totalQuestions = $allQuestions->count();
         $currentQuestion = $allQuestions->get($session->current_question_index);
 
-        return response()->json([
+        return [
             'status' => $session->status,
-            'current_question_index' => $session->current_question_index,
+            'current_question_index' => (int) $session->current_question_index,
             'question_state' => $session->question_state ?? 'answering',
+            'question_started_at' => $session->question_started_at ? (int) $session->question_started_at : null,
+            'state_version' => (int) ($session->state_version ?? 0),
+            'question_paused_remaining_ms' => $session->question_paused_remaining_ms ? (int) $session->question_paused_remaining_ms : null,
             'total_questions' => $totalQuestions,
             'player_count' => $session->players->count(),
             'timestamp' => now()->toISOString(),
@@ -297,7 +434,7 @@ class SessionController extends Controller
                     'score' => $player->score,
                     'streak' => $player->streak,
                 ];
-            }),
+            })->all(),
             'current_question' => $currentQuestion ? [
                 'id' => $currentQuestion->id,
                 'question_text' => $currentQuestion->question_text,
@@ -312,8 +449,34 @@ class SessionController extends Controller
                     'choice_text' => $c->choice_text,
                     'choice_text_ar' => $c->choice_text_ar,
                     'order' => $c->order,
-                ]),
+                ])->values()->all(),
             ] : null,
-        ]);
+        ];
+    }
+
+    // Polling endpoint (Fast eager loading for snappy realtime response)
+    public function poll(string $pin): JsonResponse
+    {
+        $session = GameSession::where('pin', $pin)
+            ->with(['questions.choices', 'players'])
+            ->firstOrFail();
+
+        $data = $this->serializeSessionState($session);
+        $data['server_now_ms'] = (int) round(microtime(true) * 1000);
+
+        return response()->json($data);
+    }
+
+    // Dedicated state synchronization endpoint (shares exact serializer with poll)
+    public function state(string $pin): JsonResponse
+    {
+        $session = GameSession::where('pin', $pin)
+            ->with(['questions.choices', 'players'])
+            ->firstOrFail();
+
+        $data = $this->serializeSessionState($session);
+        $data['server_now_ms'] = (int) round(microtime(true) * 1000);
+
+        return response()->json($data);
     }
 }
