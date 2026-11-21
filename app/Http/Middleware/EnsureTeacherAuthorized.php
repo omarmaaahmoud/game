@@ -16,7 +16,12 @@ class EnsureTeacherAuthorized
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $pin = (string) ($request->route('pin') ?? $request->input('pin'));
+        $pin = (string) (
+            $request->route('pin')
+            ?? $request->input('pin')
+            ?? ($request->segment(2) === 'sessions' ? $request->segment(3) : null)
+            ?? ($request->segment(1) === 'sessions' ? $request->segment(2) : null)
+        );
 
         $session = GameSession::where('pin', $pin)->first();
 
