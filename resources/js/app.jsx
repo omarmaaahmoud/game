@@ -159,16 +159,76 @@ function serverNow() {
   return Date.now();
 }
 
+/* ── Token Storage Helpers (PIN-keyed) ── */
+function saveTeacherToken(pin, token) {
+  if (!pin || !token) return;
+  try {
+    sessionStorage.setItem(`tecorbi_teacher_token_${pin}`, token);
+    localStorage.setItem(`tecorbi_teacher_token_${pin}`, token);
+  } catch {}
+}
+
+function getTeacherToken(pin) {
+  if (!pin) return null;
+  try {
+    return sessionStorage.getItem(`tecorbi_teacher_token_${pin}`) ||
+           localStorage.getItem(`tecorbi_teacher_token_${pin}`);
+  } catch {
+    return null;
+  }
+}
+
+function clearTeacherToken(pin) {
+  if (!pin) return;
+  try {
+    sessionStorage.removeItem(`tecorbi_teacher_token_${pin}`);
+    localStorage.removeItem(`tecorbi_teacher_token_${pin}`);
+  } catch {}
+}
+
+function savePlayerAuth(pin, player, token) {
+  if (!pin || !player || !token) return;
+  try {
+    const data = JSON.stringify({ id: player.id, token, name: player.name });
+    sessionStorage.setItem(`tecorbi_player_${pin}`, data);
+    localStorage.setItem(`tecorbi_player_${pin}`, data);
+  } catch {}
+}
+
+function getPlayerAuth(pin) {
+  if (!pin) return null;
+  try {
+    const raw = sessionStorage.getItem(`tecorbi_player_${pin}`) ||
+                localStorage.getItem(`tecorbi_player_${pin}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPlayerAuth(pin) {
+  if (!pin) return;
+  try {
+    sessionStorage.removeItem(`tecorbi_player_${pin}`);
+    localStorage.removeItem(`tecorbi_player_${pin}`);
+  } catch {}
+}
+
 /* ── API helpers ── */
 const API = '/api';
-const post = (url, body) => {
+const post = (url, body, customHeaders = {}) => {
   const p0 = getMonotonicNow();
   return fetch(API + url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...customHeaders },
     body: JSON.stringify(body),
-  }).then(r => {
-    if (!r.ok) throw new Error(r.status);
+  }).then(async r => {
+    if (!r.ok) {
+      const err = new Error(r.status);
+      err.status = r.status;
+      try { err.data = await r.json(); } catch {}
+      throw err;
+    }
     return r.json();
   }).then(data => {
     const p1 = getMonotonicNow();
@@ -179,12 +239,17 @@ const post = (url, body) => {
   });
 };
 
-const get = (url) => {
+const get = (url, customHeaders = {}) => {
   const p0 = getMonotonicNow();
   return fetch(API + url, {
-    headers: { Accept: 'application/json' }
-  }).then(r => {
-    if (!r.ok) throw new Error(r.status);
+    headers: { Accept: 'application/json', ...customHeaders }
+  }).then(async r => {
+    if (!r.ok) {
+      const err = new Error(r.status);
+      err.status = r.status;
+      try { err.data = await r.json(); } catch {}
+      throw err;
+    }
     return r.json();
   }).then(data => {
     const p1 = getMonotonicNow();
@@ -193,6 +258,26 @@ const get = (url) => {
     }
     return data;
   });
+};
+
+const teacherPost = (pin, url, body = {}) => {
+  const token = getTeacherToken(pin) || (pin === '123456' ? 'tecorbi-demo-teacher-token-123456' : null);
+  const headers = token ? { 'X-Teacher-Token': token } : {};
+  return post(url, body, headers);
+};
+
+const playerPost = (pin, url, body = {}, explicitToken = null) => {
+  const auth = getPlayerAuth(pin);
+  const token = explicitToken || auth?.token;
+  const headers = token ? { 'X-Player-Token': token } : {};
+  return post(url, { ...body, ...(token ? { player_token: token } : {}) }, headers);
+};
+
+const playerGet = (pin, url, explicitToken = null) => {
+  const auth = getPlayerAuth(pin);
+  const token = explicitToken || auth?.token;
+  const headers = token ? { 'X-Player-Token': token } : {};
+  return get(url, headers);
 };
 
 const AVATARS = [
@@ -593,6 +678,26 @@ function App() {
     return () => clearTimeout(t);
   }, [notice]);
 
+  // Restore teacher token from storage if session exists
+  useEffect(() => {
+    if (session?.pin && !session.teacher_token) {
+      const storedToken = getTeacherToken(session.pin);
+      if (storedToken) {
+        setSession(s => (s ? { ...s, teacher_token: storedToken } : s));
+      }
+    }
+  }, [session?.pin]);
+
+  // Restore player token from storage if session and player exist
+  useEffect(() => {
+    if (session?.pin && player?.id && !player.token) {
+      const auth = getPlayerAuth(session.pin);
+      if (auth && auth.id === player.id && auth.token) {
+        setPlayer(p => (p ? { ...p, token: auth.token } : p));
+      }
+    }
+  }, [session?.pin, player?.id]);
+
   const copyMobileLink = async () => {
     sfx.play('click');
     const link = getMobileUrl();
@@ -727,7 +832,7 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
       if (data.status === 'completed') {
         if (targetPin === '123456') {
           // Auto-reset demo session so it is always ready to replay!
-          await post(`/sessions/${targetPin}/reset`);
+          await teacherPost(targetPin, `/sessions/${targetPin}/reset`);
           data = await get(`/sessions/${targetPin}`);
         } else {
           setNotice('⚠️ هذه المسابقة انتهت بالفعل');
@@ -915,10 +1020,12 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
     sfx.play('click');
     try {
       let data;
+      const demoToken = getTeacherToken('123456') || 'tecorbi-demo-teacher-token-123456';
+      saveTeacherToken('123456', demoToken);
       try {
         data = await get('/sessions/123456');
         if (data.status === 'completed') {
-          await post('/sessions/123456/reset');
+          await teacherPost('123456', '/sessions/123456/reset');
           data = await get('/sessions/123456');
         }
       } catch {
@@ -963,10 +1070,15 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
           ],
         });
         data = created;
+        if (created?.teacher_token) {
+          saveTeacherToken(created.pin || '123456', created.teacher_token);
+        }
       }
       const sessionObj = data?.session || data?.data?.session || data?.data || data;
-      const pin = String(data?.pin || data?.session?.pin || sessionObj?.pin || '');
-      setSession({ ...sessionObj, pin });
+      const pin = String(data?.pin || data?.session?.pin || sessionObj?.pin || '123456');
+      const activeTeacherToken = data?.teacher_token || getTeacherToken(pin) || demoToken;
+      saveTeacherToken(pin, activeTeacherToken);
+      setSession({ ...sessionObj, pin, teacher_token: activeTeacherToken });
       setMode('teacher-lobby');
       sfx.play('join');
       setNotice('🚀 تم فتح لوحة تحكم المعلم للمسابقة التجريبية جاهزة للاستخدام!');
@@ -1136,9 +1248,13 @@ function TeacherCreate({ setMode, setSession, setNotice }) {
       });
       const sessionObj = data?.session || data?.data?.session || data?.data || data;
       const sessionPin = String(data?.pin || data?.session?.pin || data?.data?.pin || sessionObj?.pin || '');
+      if (data?.teacher_token) {
+        saveTeacherToken(sessionPin, data.teacher_token);
+      }
       const fullSession = {
         ...sessionObj,
         pin: sessionPin,
+        teacher_token: data?.teacher_token,
       };
       setSession(fullSession);
       setMode('teacher-lobby');
@@ -1305,7 +1421,7 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
 
   async function startGame() {
     sfx.play('win');
-    await post(`/sessions/${session.pin}/start`);
+    await teacherPost(session.pin, `/sessions/${session.pin}/start`);
     setMode('teacher-live');
     setNotice('🚀 انطلقت المسابقة الآن!');
   }
@@ -1583,7 +1699,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     setIsProcessing(true);
     sfx.play('click');
     try {
-      const res = await post(`/sessions/${session.pin}/next`, {
+      const res = await teacherPost(session.pin, `/sessions/${session.pin}/next`, {
         expected_index: poll?.current_question_index,
       });
       if (res && res.status === 'completed') {
@@ -1593,6 +1709,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
       await refresh();
     } catch (e) {
       console.error(e);
+      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
     } finally {
       setIsProcessing(false);
     }
@@ -1603,10 +1720,11 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     setIsProcessing(true);
     sfx.play('win');
     try {
-      await post(`/sessions/${session.pin}/reveal`);
+      await teacherPost(session.pin, `/sessions/${session.pin}/reveal`);
       await refresh();
     } catch (e) {
       console.error(e);
+      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
     } finally {
       setIsProcessing(false);
     }
@@ -1617,8 +1735,10 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     setIsProcessing(true);
     sfx.play('click');
     try {
-      await post(`/sessions/${session.pin}/pause`);
+      await teacherPost(session.pin, `/sessions/${session.pin}/pause`);
       await refresh();
+    } catch (e) {
+      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
     } finally {
       setIsProcessing(false);
     }
@@ -1629,8 +1749,10 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     setIsProcessing(true);
     sfx.play('click');
     try {
-      await post(`/sessions/${session.pin}/resume`);
+      await teacherPost(session.pin, `/sessions/${session.pin}/resume`);
       await refresh();
+    } catch (e) {
+      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
     } finally {
       setIsProcessing(false);
     }
@@ -1642,8 +1764,10 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     sfx.play('win');
     try {
       clearInterval(interval.current);
-      await post(`/sessions/${session.pin}/end`);
+      await teacherPost(session.pin, `/sessions/${session.pin}/end`);
       setMode('leaderboard');
+    } catch (e) {
+      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
     } finally {
       setIsProcessing(false);
     }
@@ -1808,7 +1932,10 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
     try {
       const data = await post(`/sessions/${pin}/join`, { name: name.trim(), avatar, accessory });
       if (!data || !data.player) { setNotice('❌ حدث خطأ غير متوقع. حاول مرة أخرى'); setLoading(false); return; }
-      setPlayer(data.player);
+      if (data.player_token) {
+        savePlayerAuth(pin, data.player, data.player_token);
+      }
+      setPlayer({ ...data.player, token: data.player_token });
       setSession({ ...sessionInfo, pin });
       setMode('student-lobby');
       sfx.play('win');
@@ -2372,12 +2499,13 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     // Send client time_taken for backward compatibility; server computes authoritatively
     const startedAt = questionStartedAtRef.current || serverNow();
     const clientTimeTaken = Math.max(0, (serverNow() - startedAt) / 1000);
+    const activeToken = player?.token || getPlayerAuth(session?.pin)?.token;
 
-    const prom = post(`/sessions/${session.pin}/answer`, {
+    const prom = playerPost(session.pin, `/sessions/${session.pin}/answer`, {
       player_id: player.id,
       choice_id: choiceId,
       time_taken: clientTimeTaken,
-    });
+    }, activeToken);
     pendingPromiseRef.current = prom;
 
     try {
@@ -2393,7 +2521,13 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       }
     } catch (e) {
       submittingRef.current = false;
-      // Handle 4xx rejection gracefully (treat as time's up / locked out without crashing)
+      if (e?.status === 403) {
+        clearPlayerAuth(session?.pin);
+        setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
+        setMode('student-join');
+        return;
+      }
+      // Handle other 4xx rejection gracefully (treat as time's up / locked out without crashing)
       const errRes = { is_correct: false, points_earned: 0, total_score: player?.score || 0 };
       pendingResultRef.current = errRes;
       setPendingResult(errRes);
@@ -2906,7 +3040,7 @@ function Leaderboard({ session, setMode, player }) {
   const resetGame = async () => {
     sfx.play('click');
     try {
-      await post(`/sessions/${session.pin}/reset`);
+      await teacherPost(session.pin, `/sessions/${session.pin}/reset`);
       setMode('home');
     } catch {
       setMode('home');
