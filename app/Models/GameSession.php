@@ -9,6 +9,7 @@ class GameSession extends Model
 {
     protected $fillable = [
         'pin',
+        'teacher_token_hash',
         'teacher_name',
         'title',
         'status',
@@ -17,6 +18,10 @@ class GameSession extends Model
         'question_started_at',
         'state_version',
         'question_paused_remaining_ms',
+    ];
+
+    protected $hidden = [
+        'teacher_token_hash',
     ];
 
     protected $casts = [

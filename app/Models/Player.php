@@ -8,7 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Player extends Model
 {
-    protected $fillable = ['game_session_id', 'name', 'avatar', 'score', 'streak', 'joined_at'];
+    protected $fillable = ['game_session_id', 'name', 'avatar', 'token_hash', 'score', 'streak', 'joined_at'];
+
+    protected $hidden = [
+        'token_hash',
+    ];
 
     protected $casts = ['joined_at' => 'datetime'];
 
