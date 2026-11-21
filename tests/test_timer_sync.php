@@ -272,9 +272,9 @@ echo "\n── Test 4: answer() accepted during active window, score computed fr
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// TEST 5: answer() rejected before question start (TOO_EARLY)
+// TEST 5: answer() boundary timing (before, exactly at, after start)
 // ═══════════════════════════════════════════════════════════════════
-echo "\n── Test 5: answer() rejected before question_started_at (TOO_EARLY) ──\n";
+echo "\n── Test 5: answer() rejected before start, accepted at and after start ──\n";
 {
     [$session, $question, $correct, $wrong] = createTestSession();
     $controller = new \App\Http\Controllers\SessionController();
@@ -282,22 +282,49 @@ echo "\n── Test 5: answer() rejected before question_started_at (TOO_EARLY) 
 
     $controller->start($session->pin);
     $session->refresh();
-    // Set question_started_at to 10s in the future (well beyond 300ms tolerance)
-    $session->update(['question_started_at' => nowMs() + 10000]);
 
-    $player = $session->players()->create([
-        'name' => 'Early Bird', 'avatar' => 'ninja', 'joined_at' => now(),
-    ]);
-
-    $request = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
-        'player_id' => $player->id,
+    // Case A: 100ms before start timestamp (TOO_EARLY)
+    $session->update(['question_started_at' => nowMs() + 100]);
+    $playerA = $session->players()->create(['name' => 'Early 100ms', 'avatar' => 'ninja', 'joined_at' => now()]);
+    $reqA = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
+        'player_id' => $playerA->id,
         'choice_id' => $correct->id,
     ]);
-    $response = $gameController->answer($request, $session->pin);
-    $data = json_decode($response->getContent(), true);
+    $respA = $gameController->answer($reqA, $session->pin);
+    $dataA = json_decode($respA->getContent(), true);
 
-    assert_eq(422, $response->getStatusCode(), 'TOO_EARLY: HTTP 422');
-    assert_eq('TOO_EARLY', $data['code'] ?? null, 'TOO_EARLY error code returned');
+    assert_eq(422, $respA->getStatusCode(), 'Answer 100ms before start: HTTP 422');
+    assert_eq('TOO_EARLY', $dataA['code'] ?? null, 'TOO_EARLY error code returned');
+    assert_eq(0, (int) $playerA->fresh()->score, 'Early answer player has 0 score');
+    assert_eq(0, Answer::where('player_id', $playerA->id)->count(), 'No answer record stored for early submission');
+
+    // Case B: Exactly at start timestamp (nowMs === startedAt)
+    $nowExact = nowMs();
+    $session->update(['question_started_at' => $nowExact]);
+    $playerB = $session->players()->create(['name' => 'Exact Start', 'avatar' => 'robot', 'joined_at' => now()]);
+    $reqB = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
+        'player_id' => $playerB->id,
+        'choice_id' => $correct->id,
+    ]);
+    $respB = $gameController->answer($reqB, $session->pin);
+    $dataB = json_decode($respB->getContent(), true);
+
+    assert_eq(200, $respB->getStatusCode(), 'Answer exactly at start: HTTP 200');
+    assert_true($dataB['is_correct'] === true, 'Answer exactly at start is marked correct');
+    assert_eq(1000, (int) $dataB['points_earned'], 'Answer at start receives full 1000 points');
+
+    // Case C: After start timestamp (normal answering window)
+    $session->update(['question_started_at' => nowMs() - 2000]);
+    $playerC = $session->players()->create(['name' => 'Normal 2s', 'avatar' => 'wizard', 'joined_at' => now()]);
+    $reqC = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
+        'player_id' => $playerC->id,
+        'choice_id' => $correct->id,
+    ]);
+    $respC = $gameController->answer($reqC, $session->pin);
+    $dataC = json_decode($respC->getContent(), true);
+
+    assert_eq(200, $respC->getStatusCode(), 'Answer 2s after start: HTTP 200');
+    assert_true($dataC['points_earned'] >= 500 && $dataC['points_earned'] <= 1000, 'Points within range');
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -431,9 +458,9 @@ echo "\n── Test 9: Late join: request 5s after start on 20s question → ~15
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// TEST 10: pause() stores remaining time, resume() preserves it
+// TEST 10: pause() stores remaining time, resume() preserves it, idempotency & lead period
 // ═══════════════════════════════════════════════════════════════════
-echo "\n── Test 10: pause() stores remaining time; resume() preserves it ──\n";
+echo "\n── Test 10: pause() and resume() idempotency, remaining time preservation, lead period ──\n";
 {
     [$session, $question, $correct, $wrong] = createTestSession();
     $controller = new \App\Http\Controllers\SessionController();
@@ -443,26 +470,33 @@ echo "\n── Test 10: pause() stores remaining time; resume() preserves it ─
     // Simulate 8s elapsed (should have ~12s remaining on 20s question)
     $session->update(['question_started_at' => nowMs() - 8000]);
 
-    // Pause
-    $pauseResp = json_decode($controller->pause($session->pin)->getContent(), true);
+    // First Pause
+    $pauseResp1 = json_decode($controller->pause($session->pin)->getContent(), true);
     $session->refresh();
 
-    assert_eq('paused', $session->status, 'After pause: status is paused');
-    assert_true($session->question_paused_remaining_ms !== null, 'After pause: question_paused_remaining_ms is set');
-    $remainingMs = $session->question_paused_remaining_ms;
+    assert_eq('paused', $session->status, 'After first pause: status is paused');
+    assert_true($session->question_paused_remaining_ms !== null, 'After first pause: remaining_ms set');
+    $remainingMs1 = $session->question_paused_remaining_ms;
     assert_true(
-        $remainingMs >= 11000 && $remainingMs <= 13000,
-        "Paused remaining ≈ 12000ms (got {$remainingMs}ms)"
+        $remainingMs1 >= 11000 && $remainingMs1 <= 13000,
+        "First pause remaining ≈ 12000ms (got {$remainingMs1}ms)"
     );
 
-    // Wait a little and resume
-    usleep(200000); // 200ms
+    // Duplicate Pause 1 second later: MUST NOT recalculate or destroy remaining time!
+    usleep(100000); // 100ms
+    $pauseResp2 = json_decode($controller->pause($session->pin)->getContent(), true);
+    $session->refresh();
+    assert_eq('paused', $session->status, 'After duplicate pause: status is still paused');
+    assert_eq($remainingMs1, $session->question_paused_remaining_ms, 'Duplicate pause: remaining_ms strictly identical (not reduced)');
 
-    $resumeResp = json_decode($controller->resume($session->pin)->getContent(), true);
+    // Resume
+    usleep(200000); // 200ms
+    $resumeResp1 = json_decode($controller->resume($session->pin)->getContent(), true);
     $session->refresh();
 
-    assert_eq('active', $session->status, 'After resume: status is active');
-    assert_true($session->question_paused_remaining_ms === null, 'After resume: paused_remaining_ms cleared');
+    assert_eq('active', $session->status, 'After first resume: status is active');
+    assert_true($session->question_paused_remaining_ms === null, 'After first resume: paused_remaining_ms cleared');
+    $startedAtAfterResume1 = $session->question_started_at;
 
     // Check that the new started_at preserves the remaining time
     $newElapsedMs = nowMs() - $session->question_started_at;
@@ -470,6 +504,38 @@ echo "\n── Test 10: pause() stores remaining time; resume() preserves it ─
     assert_true(
         $newRemainingMs >= 10500 && $newRemainingMs <= 13500,
         "After resume: remaining ≈ 12s (got " . round($newRemainingMs/1000, 1) . "s)"
+    );
+
+    // Duplicate Resume: MUST NOT restart or extend the timer!
+    $resumeResp2 = json_decode($controller->resume($session->pin)->getContent(), true);
+    $session->refresh();
+    assert_eq('active', $session->status, 'After duplicate resume: status is still active');
+    assert_eq($startedAtAfterResume1, $session->question_started_at, 'Duplicate resume: question_started_at unchanged (timer not extended)');
+
+    // ── Pause during 2-second synchronization lead period ──
+    $leadMs = config('quiz.sync_lead_ms', 2000);
+    // Set question_started_at to 1500ms in the future (inside lead period)
+    $futureStart = nowMs() + 1500;
+    $session->update([
+        'status' => 'active',
+        'question_started_at' => $futureStart,
+        'question_paused_remaining_ms' => null,
+    ]);
+
+    $pauseLeadResp = json_decode($controller->pause($session->pin)->getContent(), true);
+    $session->refresh();
+    assert_eq('paused', $session->status, 'Pause during lead period: status is paused');
+    assert_true($session->question_paused_remaining_ms > 20000, 'Pause during lead period: preserved lead flag (> 20000ms)');
+
+    // Resume from lead period: question must resume with synchronization lead period!
+    $resumeLeadResp = json_decode($controller->resume($session->pin)->getContent(), true);
+    $session->refresh();
+    assert_eq('active', $session->status, 'Resume from lead period: status is active');
+    assert_true($session->question_started_at > nowMs(), 'Resume from lead period: question_started_at is in future (lead period active)');
+    assert_true(
+        $session->question_started_at <= nowMs() + $leadMs + 100 &&
+        $session->question_started_at >= nowMs() + $leadMs - 200,
+        "Resume from lead period: started_at ≈ nowMs + {$leadMs}ms"
     );
 }
 
