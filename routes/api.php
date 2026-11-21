@@ -24,6 +24,7 @@ Route::middleware('teacher.auth')->group(function () {
 // Game play
 Route::get('/sessions/{pin}/current-question', [GameController::class, 'currentQuestion']);
 Route::post('/sessions/{pin}/answer', [GameController::class, 'answer']);
+Route::get('/sessions/{pin}/my-result', [GameController::class, 'myResult']);
 Route::get('/sessions/{pin}/leaderboard', [GameController::class, 'leaderboard']);
 Route::get('/sessions/{pin}/results', [GameController::class, 'results']);
 

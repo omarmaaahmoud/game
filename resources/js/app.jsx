@@ -2462,28 +2462,48 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     return () => { if (midBoardTimer.current) clearTimeout(midBoardTimer.current); };
   }, [isRevealed, session, player, setPlayer]);
 
-  function triggerReveal(revealedCorrectId = null) {
+  async function triggerReveal(revealedCorrectId = null) {
     setIsRevealed(true);
     if (revealedCorrectId) {
       setCorrectChoiceId(revealedCorrectId);
     }
     // If request is still in-flight, wait for it so we don't prematurely show 'Wrong'!
     if (submittingRef.current && pendingPromiseRef.current) {
-      pendingPromiseRef.current.then(res => {
-        applyResultSoundAndScore(res);
-      }).catch(() => {
-        if (!playedSound.current) {
-          playedSound.current = true;
-          sfx.play('wrong');
-        }
-      });
+      try {
+        await pendingPromiseRef.current;
+      } catch {}
+    }
+
+    // If result was already received with is_correct (legacy mode), apply it
+    const res = pendingResultRef.current;
+    if (res && res.is_correct !== undefined) {
+      applyResultSoundAndScore(res);
       return;
     }
 
-    const res = pendingResultRef.current;
-    if (res) {
-      applyResultSoundAndScore(res);
-    } else if (selected === null && !playedSound.current) {
+    // Secure mode: Fetch authenticated result from /my-result
+    const activeToken = player?.token || getPlayerAuth(session?.pin)?.token;
+    try {
+      const myRes = await playerGet(session.pin, `/sessions/${session.pin}/my-result`, activeToken);
+      if (myRes) {
+        if (myRes.correct_choice_id) {
+          setCorrectChoiceId(myRes.correct_choice_id);
+        }
+        pendingResultRef.current = myRes;
+        setPendingResult(myRes);
+        applyResultSoundAndScore(myRes);
+        return;
+      }
+    } catch (e) {
+      if (e?.status === 403) {
+        clearPlayerAuth(session?.pin);
+        setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
+        setMode('student-join');
+        return;
+      }
+    }
+
+    if (selected === null && !playedSound.current) {
       // Time expired without answering
       playedSound.current = true;
       sfx.play('wrong');
@@ -2511,13 +2531,20 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     try {
       const data = await prom;
       submittingRef.current = false;
-      pendingResultRef.current = data;
-      setPendingResult(data);
-      if (data.correct_choice_id) {
-        setCorrectChoiceId(data.correct_choice_id);
-      }
-      if (isRevealed) {
-        applyResultSoundAndScore(data);
+      if (data && data.is_correct !== undefined) {
+        // Legacy mode (QUIZ_REVEAL_ON_ANSWER=true)
+        pendingResultRef.current = data;
+        setPendingResult(data);
+        if (data.correct_choice_id) {
+          setCorrectChoiceId(data.correct_choice_id);
+        }
+        if (isRevealed) {
+          applyResultSoundAndScore(data);
+        }
+      } else {
+        // Secure mode (QUIZ_REVEAL_ON_ANSWER=false): result fetched upon reveal
+        pendingResultRef.current = { accepted: true };
+        setPendingResult({ accepted: true });
       }
     } catch (e) {
       submittingRef.current = false;

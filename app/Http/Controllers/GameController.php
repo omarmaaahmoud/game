@@ -223,12 +223,92 @@ class GameController extends Controller
 
         broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
 
+        // When QUIZ_REVEAL_ON_ANSWER is false (default), do not reveal answer or score early
+        $revealOnAnswer = (bool) config('quiz.reveal_on_answer', false);
+        if (!$revealOnAnswer) {
+            return response()->json([
+                'accepted' => true,
+                'server_now_ms' => (int) round(microtime(true) * 1000),
+            ]);
+        }
+
         return response()->json([
             'is_correct' => $isCorrect,
             'points_earned' => $points,
             'total_score' => $player->fresh()->score,
             'streak' => $player->fresh()->streak,
             'correct_choice_id' => $choice->question->choices()->where('is_correct', true)->first()?->id,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
+        ]);
+    }
+
+    // Student gets their own result for the current question ONLY after reveal
+    public function myResult(Request $request, string $pin): JsonResponse
+    {
+        $session = GameSession::where('pin', $pin)->firstOrFail();
+
+        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        if (!$playerToken) {
+            return response()->json([
+                'error' => 'Player authorization required',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $tokenHash = hash('sha256', (string) $playerToken);
+        $player = Player::where('game_session_id', $session->id)
+            ->where('token_hash', $tokenHash)
+            ->first();
+
+        if (!$player) {
+            return response()->json([
+                'error' => 'Unauthorized player action',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $question = $session->currentQuestion();
+        if (!$question) {
+            return response()->json([
+                'error' => 'No active question',
+                'code' => 'NO_QUESTION',
+            ], 422);
+        }
+
+        // Before reveal, return 409 Conflict
+        if ($session->question_state !== 'revealed') {
+            return response()->json([
+                'error' => 'Question result is not revealed yet',
+                'code' => 'NOT_REVEALED',
+            ], 409);
+        }
+
+        $correctChoice = $question->choices()->where('is_correct', true)->first();
+        $answer = Answer::where('player_id', $player->id)
+            ->where('question_id', $question->id)
+            ->first();
+
+        if (!$answer) {
+            return response()->json([
+                'answered' => false,
+                'is_correct' => false,
+                'points_earned' => 0,
+                'total_score' => (int) $player->score,
+                'streak' => (int) $player->streak,
+                'choice_id' => null,
+                'correct_choice_id' => $correctChoice?->id,
+                'server_now_ms' => (int) round(microtime(true) * 1000),
+            ]);
+        }
+
+        return response()->json([
+            'answered' => true,
+            'is_correct' => (bool) $answer->is_correct,
+            'points_earned' => (int) $answer->points_earned,
+            'total_score' => (int) $player->score,
+            'streak' => (int) $player->streak,
+            'choice_id' => $answer->choice_id,
+            'correct_choice_id' => $correctChoice?->id,
             'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
