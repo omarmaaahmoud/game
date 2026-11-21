@@ -81,8 +81,8 @@ class GameController extends Controller
             ], 422);
         }
 
-        // Small tolerance before question_started_at (e.g. 300ms)
-        if ($nowMs < ($startedAt - 300)) {
+        // Reject answers received before the official server-side question start
+        if ($nowMs < $startedAt) {
             return response()->json([
                 'error' => 'Question has not started yet',
                 'code' => 'TOO_EARLY',
@@ -113,7 +113,8 @@ class GameController extends Controller
         }
 
         // Compute time_taken purely on server clamped to [0, time_limit]
-        $elapsedSeconds = max(0, ($nowMs - $startedAt) / 1000);
+        // Since $nowMs >= $startedAt, $elapsedSeconds is non-negative
+        $elapsedSeconds = ($nowMs - $startedAt) / 1000;
         $timeTaken = min($elapsedSeconds, (float) $question->time_limit);
 
         $isCorrect = $choice->is_correct;
