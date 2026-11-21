@@ -98,30 +98,71 @@ const getMobileUrl = () => {
   return `http://${currentWifiIp}${port}`;
 };
 
-/* ── Clock Synchronization State ── */
-let bestClockOffset = 0;
-let bestClockRtt = null;
+/* ── Monotonic Clock Synchronization (NTP Filter) ── */
+const MAX_CLOCK_SAMPLES = 8;
+const SAMPLE_EXPIRY_MS = 60000; // 60 seconds
+let clockSamples = [];
+let currentServerBaseEpoch = null;
 
-function updateClockSync(serverNowMs, t0, t1) {
+function getMonotonicNow() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function updateClockSync(serverNowMs, p0, p1) {
   if (!serverNowMs) return;
-  const rtt = t1 - t0;
-  if (rtt <= 2000) {
-    const offset = serverNowMs - Math.round((t0 + t1) / 2);
-    if (bestClockRtt === null || rtt < bestClockRtt) {
-      bestClockRtt = rtt;
-      bestClockOffset = offset;
+  const rtt = Math.max(0, p1 - p0);
+  const midpointP = p0 + (rtt / 2);
+  const baseEpoch = serverNowMs - midpointP;
+  const nowMono = getMonotonicNow();
+
+  // Filter out expired samples older than 60s
+  clockSamples = clockSamples.filter(s => (nowMono - s.addedAt) < SAMPLE_EXPIRY_MS);
+
+  // Add new sample
+  clockSamples.push({
+    baseEpoch,
+    rtt,
+    addedAt: nowMono,
+  });
+
+  // Keep at most MAX_CLOCK_SAMPLES
+  if (clockSamples.length > MAX_CLOCK_SAMPLES) {
+    clockSamples.shift();
+  }
+
+  // Selection strategy:
+  // 1. Prefer high-confidence samples with RTT <= 2000ms.
+  // 2. If all samples have RTT > 2000ms (slow network), use available samples.
+  const validSamples = clockSamples.filter(s => s.rtt <= 2000);
+  const candidates = validSamples.length > 0 ? validSamples : clockSamples;
+
+  // Pick sample with lowest RTT among candidates
+  let best = candidates[0];
+  for (let i = 1; i < candidates.length; i++) {
+    if (candidates[i].rtt < best.rtt) {
+      best = candidates[i];
     }
+  }
+
+  if (best) {
+    currentServerBaseEpoch = best.baseEpoch;
   }
 }
 
 function serverNow() {
-  return Date.now() + (bestClockOffset || 0);
+  if (currentServerBaseEpoch !== null) {
+    return Math.round(currentServerBaseEpoch + getMonotonicNow());
+  }
+  return Date.now();
 }
 
 /* ── API helpers ── */
 const API = '/api';
 const post = (url, body) => {
-  const t0 = Date.now();
+  const p0 = getMonotonicNow();
   return fetch(API + url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -130,25 +171,25 @@ const post = (url, body) => {
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }).then(data => {
-    const t1 = Date.now();
+    const p1 = getMonotonicNow();
     if (data && data.server_now_ms) {
-      updateClockSync(data.server_now_ms, t0, t1);
+      updateClockSync(data.server_now_ms, p0, p1);
     }
     return data;
   });
 };
 
 const get = (url) => {
-  const t0 = Date.now();
+  const p0 = getMonotonicNow();
   return fetch(API + url, {
     headers: { Accept: 'application/json' }
   }).then(r => {
     if (!r.ok) throw new Error(r.status);
     return r.json();
   }).then(data => {
-    const t1 = Date.now();
+    const p1 = getMonotonicNow();
     if (data && data.server_now_ms) {
-      updateClockSync(data.server_now_ms, t0, t1);
+      updateClockSync(data.server_now_ms, p0, p1);
     }
     return data;
   });
