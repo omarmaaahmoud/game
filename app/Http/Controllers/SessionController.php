@@ -20,18 +20,30 @@ class SessionController extends Controller
     // Teacher creates a new session with questions
     public function store(Request $request): JsonResponse
     {
+        $maxQuestions = config('quiz.max_questions', 50);
+
         $validated = $request->validate([
             'teacher_name' => 'required|string|max:100',
             'title' => 'required|string|max:200',
-            'questions' => 'required|array|min:1',
-            'questions.*.question_text' => 'required|string',
-            'questions.*.question_text_ar' => 'nullable|string',
+            'questions' => "required|array|min:1|max:{$maxQuestions}",
+            'questions.*.question_text' => 'required|string|max:500',
+            'questions.*.question_text_ar' => 'nullable|string|max:500',
             'questions.*.time_limit' => 'nullable|integer|min:5|max:120',
             'questions.*.choices' => 'required|array|min:2|max:6',
-            'questions.*.choices.*.choice_text' => 'required|string',
-            'questions.*.choices.*.choice_text_ar' => 'nullable|string',
+            'questions.*.choices.*.choice_text' => 'required|string|max:200',
+            'questions.*.choices.*.choice_text_ar' => 'nullable|string|max:200',
             'questions.*.choices.*.is_correct' => 'required|boolean',
         ]);
+
+        foreach ($validated['questions'] as $qi => $qData) {
+            $hasCorrect = collect($qData['choices'])->contains(fn ($c) => !empty($c['is_correct']));
+            if (!$hasCorrect) {
+                return response()->json([
+                    'error' => 'Question ' . ($qi + 1) . ' must have at least one correct choice',
+                    'code' => 'INVALID_CHOICES',
+                ], 422);
+            }
+        }
 
         $teacherToken = bin2hex(random_bytes(32));
         $teacherTokenHash = hash('sha256', $teacherToken);
@@ -90,19 +102,57 @@ class SessionController extends Controller
         $session = GameSession::where('pin', $pin)->firstOrFail();
 
         if ($session->status === 'completed') {
-            return response()->json(['error' => 'This session has ended'], 422);
+            return response()->json([
+                'error' => 'This session has ended',
+                'code' => 'SESSION_COMPLETED',
+            ], 422);
         }
 
+        $maxPlayers = config('quiz.max_players_per_session', 100);
+        if ($session->players()->count() >= $maxPlayers) {
+            return response()->json([
+                'error' => 'Session is full',
+                'code' => 'SESSION_FULL',
+            ], 422);
+        }
+
+        $allowedAvatars = [
+            'spongebob', 'smurf', 'patrick', 'astronaut', 'ninja', 'robot',
+            'wizard', 'superhero', 'artist', 'unicorn', 'dragon', 'cat',
+            'pirate', 'alien', 'fairy',
+        ];
+
+        $allowedAccessories = [
+            'none', 'crown', 'cap', 'tophat', 'party-hat', 'glasses',
+            'mask', 'star', 'heart', 'fire',
+        ];
+
         $validated = $request->validate([
-            'name' => 'required|string|max:50',
-            'avatar' => 'required|string|max:50',
+            'name' => 'required|string',
+            'avatar' => 'required|string|in:' . implode(',', $allowedAvatars),
+            'accessory' => 'nullable|string|in:' . implode(',', $allowedAccessories),
         ]);
+
+        $cleanName = trim(strip_tags($validated['name']));
+        if ($cleanName === '' || mb_strlen($cleanName) > 20) {
+            return response()->json([
+                'error' => 'Player name must be between 1 and 20 characters and cannot contain HTML tags',
+                'code' => 'NAME_INVALID',
+            ], 422);
+        }
+
+        if ($session->players()->where('name', $cleanName)->exists()) {
+            return response()->json([
+                'error' => 'Player name already taken in this session',
+                'code' => 'NAME_TAKEN',
+            ], 422);
+        }
 
         $playerToken = bin2hex(random_bytes(32));
         $playerTokenHash = hash('sha256', $playerToken);
 
         $player = $session->players()->create([
-            'name' => $validated['name'],
+            'name' => $cleanName,
             'avatar' => $validated['avatar'],
             'token_hash' => $playerTokenHash,
             'joined_at' => now(),

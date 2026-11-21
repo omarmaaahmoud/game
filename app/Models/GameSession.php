@@ -48,9 +48,14 @@ class GameSession extends Model
 
     public static function generatePin(): string
     {
+        $attempts = 0;
         do {
             $pin = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        } while (static::where('pin', $pin)->exists());
+            $attempts++;
+            if ($attempts > 100) {
+                throw new \RuntimeException('Unable to generate unique PIN');
+            }
+        } while (static::where('pin', $pin)->where('status', '!=', 'completed')->exists());
 
         return $pin;
     }
