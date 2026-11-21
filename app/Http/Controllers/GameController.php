@@ -41,6 +41,7 @@ class GameController extends Controller
             ],
             'question_number' => $session->current_question_index + 1,
             'total_questions' => $session->questions()->count(),
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
@@ -49,19 +50,55 @@ class GameController extends Controller
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
 
-        if ($session->status !== 'active') {
-            return response()->json(['error' => 'Game is not active'], 422);
+        if ($session->status !== 'active' || $session->question_state !== 'answering') {
+            return response()->json([
+                'error' => 'Game is not active',
+                'code' => 'GAME_NOT_ACTIVE',
+            ], 422);
         }
 
         $validated = $request->validate([
             'player_id' => 'required|integer|exists:players,id',
             'choice_id' => 'required|integer|exists:choices,id',
-            'time_taken' => 'required|numeric|min:0',
+            'time_taken' => 'nullable|numeric|min:0', // accepted for backward compatibility, ignored
         ]);
+
+        $nowMs = (int) round(microtime(true) * 1000);
+        $startedAt = $session->question_started_at;
+
+        if ($startedAt === null) {
+            return response()->json([
+                'error' => 'Question is not active for answering',
+                'code' => 'NOT_STARTED',
+            ], 422);
+        }
 
         $question = $session->currentQuestion();
         if (!$question) {
-            return response()->json(['error' => 'No active question'], 422);
+            return response()->json([
+                'error' => 'No active question',
+                'code' => 'NO_QUESTION',
+            ], 422);
+        }
+
+        // Reject answers received before the official server-side question start
+        if ($nowMs < $startedAt) {
+            return response()->json([
+                'error' => 'Question has not started yet',
+                'code' => 'TOO_EARLY',
+            ], 422);
+        }
+
+        // Check if deadline + grace has passed
+        $graceMs = (int) config('quiz.answer_grace_ms', 1000);
+        $timeLimitMs = ((int) $question->time_limit) * 1000;
+        $deadlineMs = $startedAt + $timeLimitMs + $graceMs;
+
+        if ($nowMs > $deadlineMs) {
+            return response()->json([
+                'error' => 'Time is up for this question',
+                'code' => 'TIME_EXPIRED',
+            ], 422);
         }
 
         $player = Player::findOrFail($validated['player_id']);
@@ -69,11 +106,18 @@ class GameController extends Controller
         // Check if choice belongs to this question
         $choice = $question->choices()->find($validated['choice_id']);
         if (!$choice) {
-            return response()->json(['error' => 'Invalid choice for this question'], 422);
+            return response()->json([
+                'error' => 'Invalid choice for this question',
+                'code' => 'INVALID_CHOICE',
+            ], 422);
         }
 
+        // Compute time_taken purely on server clamped to [0, time_limit]
+        // Since $nowMs >= $startedAt, $elapsedSeconds is non-negative
+        $elapsedSeconds = ($nowMs - $startedAt) / 1000;
+        $timeTaken = min($elapsedSeconds, (float) $question->time_limit);
+
         $isCorrect = $choice->is_correct;
-        $timeTaken = min($validated['time_taken'], $question->time_limit);
         $points = 0;
 
         if ($isCorrect) {
@@ -163,6 +207,7 @@ class GameController extends Controller
             'total_score' => $player->fresh()->score,
             'streak' => $player->fresh()->streak,
             'correct_choice_id' => $choice->question->choices()->where('is_correct', true)->first()?->id,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
@@ -186,6 +231,7 @@ class GameController extends Controller
                     'streak' => $player->streak,
                 ];
             }),
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
@@ -223,6 +269,7 @@ class GameController extends Controller
             'total_questions' => $session->questions->count(),
             'total_players' => $session->players->count(),
             'results' => $players,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 }

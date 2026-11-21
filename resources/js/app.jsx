@@ -98,10 +98,102 @@ const getMobileUrl = () => {
   return `http://${currentWifiIp}${port}`;
 };
 
+/* ── Monotonic Clock Synchronization (NTP Filter) ── */
+const MAX_CLOCK_SAMPLES = 8;
+const SAMPLE_EXPIRY_MS = 60000; // 60 seconds
+let clockSamples = [];
+let currentServerBaseEpoch = null;
+
+function getMonotonicNow() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function updateClockSync(serverNowMs, p0, p1) {
+  if (!serverNowMs) return;
+  const rtt = Math.max(0, p1 - p0);
+  const midpointP = p0 + (rtt / 2);
+  const baseEpoch = serverNowMs - midpointP;
+  const nowMono = getMonotonicNow();
+
+  // Filter out expired samples older than 60s
+  clockSamples = clockSamples.filter(s => (nowMono - s.addedAt) < SAMPLE_EXPIRY_MS);
+
+  // Add new sample
+  clockSamples.push({
+    baseEpoch,
+    rtt,
+    addedAt: nowMono,
+  });
+
+  // Keep at most MAX_CLOCK_SAMPLES
+  if (clockSamples.length > MAX_CLOCK_SAMPLES) {
+    clockSamples.shift();
+  }
+
+  // Selection strategy:
+  // 1. Prefer high-confidence samples with RTT <= 2000ms.
+  // 2. If all samples have RTT > 2000ms (slow network), use available samples.
+  const validSamples = clockSamples.filter(s => s.rtt <= 2000);
+  const candidates = validSamples.length > 0 ? validSamples : clockSamples;
+
+  // Pick sample with lowest RTT among candidates
+  let best = candidates[0];
+  for (let i = 1; i < candidates.length; i++) {
+    if (candidates[i].rtt < best.rtt) {
+      best = candidates[i];
+    }
+  }
+
+  if (best) {
+    currentServerBaseEpoch = best.baseEpoch;
+  }
+}
+
+function serverNow() {
+  if (currentServerBaseEpoch !== null) {
+    return Math.round(currentServerBaseEpoch + getMonotonicNow());
+  }
+  return Date.now();
+}
+
 /* ── API helpers ── */
 const API = '/api';
-const post = (url, body) => fetch(API + url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
-const get = (url) => fetch(API + url, { headers: { Accept: 'application/json' } }).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+const post = (url, body) => {
+  const p0 = getMonotonicNow();
+  return fetch(API + url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => {
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }).then(data => {
+    const p1 = getMonotonicNow();
+    if (data && data.server_now_ms) {
+      updateClockSync(data.server_now_ms, p0, p1);
+    }
+    return data;
+  });
+};
+
+const get = (url) => {
+  const p0 = getMonotonicNow();
+  return fetch(API + url, {
+    headers: { Accept: 'application/json' }
+  }).then(r => {
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }).then(data => {
+    const p1 = getMonotonicNow();
+    if (data && data.server_now_ms) {
+      updateClockSync(data.server_now_ms, p0, p1);
+    }
+    return data;
+  });
+};
 
 const AVATARS = [
   { id: 'spongebob', name: 'سبونج بوب', role: 'بطل قاع الهامور 🌟', emoji: '🧽', image: '/images/avatars/spongebob.png', color: '#eab308' },
@@ -1166,7 +1258,29 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
   }, [session]);
 
   useEffect(() => {
-    poll();
+    let isMounted = true;
+    let timer = null;
+
+    const schedulePoll = () => {
+      if (!isMounted) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(async () => {
+        if (!isMounted) return;
+        if (!document.hidden) {
+          await poll();
+        }
+        schedulePoll();
+      }, 1000); // 1000ms in lobby
+    };
+
+    poll().then(schedulePoll);
+
+    const onVisibilityChange = () => {
+      if (!document.hidden && isMounted) {
+        poll();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Real-time WebSocket listener for instant student joining
     const unsubscribe = subscribeToSession(session.pin, {
@@ -1181,12 +1295,11 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
       },
     }, poll);
 
-    // Gentle fallback polling every 4 seconds instead of aggressive 600ms hammering
-    interval.current = setInterval(poll, 4000);
-
     return () => {
+      isMounted = false;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       unsubscribe();
-      clearInterval(interval.current);
+      if (timer) clearTimeout(timer);
     };
   }, [session, poll]);
 
@@ -1358,8 +1471,11 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
   const [poll, setPoll] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [liveRemaining, setLiveRemaining] = useState(null);
   const timerRef = useRef(null);
   const isMountedRef = useRef(true);
+  const pollRef = useRef(poll);
+  pollRef.current = poll;
 
   const refresh = useCallback(async () => {
     try {
@@ -1385,7 +1501,6 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
       StudentAnswered: (data) => {
         // Teacher receives instant student answer submission
         if (data && data.answered_count !== undefined) {
-          // Trigger snappy leaderboard refresh if needed
           refresh();
         }
       },
@@ -1399,26 +1514,65 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
       },
     }, refresh);
 
-    // Gentle fallback polling every 4 seconds instead of 550ms hammering
+    // Adaptive polling: 2000ms during active question, 1000ms between questions/revealed
     let isPolling = false;
     const scheduleNextPoll = () => {
       if (!isMountedRef.current) return;
+      const currentPoll = pollRef.current;
+      const isActive = currentPoll?.status === 'active' && currentPoll?.question_state === 'answering';
+      const delay = isActive ? 2000 : 1000;
+
       timerRef.current = setTimeout(async () => {
         if (isMountedRef.current && !isPolling) {
           isPolling = true;
           try {
-            await refresh();
+            if (!document.hidden) {
+              await refresh();
+            }
           } finally {
             isPolling = false;
             scheduleNextPoll();
           }
+        } else {
+          scheduleNextPoll();
         }
-      }, 4000);
+      }, delay);
     };
     scheduleNextPoll();
 
+    const onVisibility = () => {
+      if (!document.hidden && isMountedRef.current) {
+        refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // Live clock tick driven by server-authoritative timestamps
+    const clockInterval = setInterval(() => {
+      const p = pollRef.current;
+      if (!p || !p.current_question) {
+        setLiveRemaining(null);
+        return;
+      }
+      const startedAt = p.question_started_at;
+      const limit = p.current_question.time_limit || 20;
+      if (startedAt && p.status === 'active' && p.question_state === 'answering') {
+        const now = serverNow();
+        if (now < startedAt) {
+          setLiveRemaining(limit);
+        } else {
+          const rem = Math.max(0, Math.ceil(limit - (now - startedAt) / 1000));
+          setLiveRemaining(rem);
+        }
+      } else {
+        setLiveRemaining(null);
+      }
+    }, 200);
+
     return () => {
       isMountedRef.current = false;
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(clockInterval);
       unsubscribe();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -1429,9 +1583,10 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     setIsProcessing(true);
     sfx.play('click');
     try {
-      const res = await post(`/sessions/${session.pin}/next`);
+      const res = await post(`/sessions/${session.pin}/next`, {
+        expected_index: poll?.current_question_index,
+      });
       if (res && res.status === 'completed') {
-        clearInterval(interval.current);
         setMode('leaderboard');
         return;
       }
@@ -1523,7 +1678,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
                 <span className={`reveal-status-indicator ${isRevealed ? 'is-revealed' : 'is-answering'}`}>
                   {isRevealed ? '✅ الإجابة معروضة للطلاب' : '⏳ الطلاب يجيبون حالياً'}
                 </span>
-                <span className="time-badge"><Clock3 size={16} /> {poll.current_question.time_limit} ثانية</span>
+                <span className="time-badge"><Clock3 size={16} /> {liveRemaining !== null ? `${liveRemaining}s متبقية` : `${poll.current_question.time_limit} ثانية`}</span>
               </div>
               <h2 className="qlp-question-title">{poll.current_question.question_text}</h2>
               {poll.current_question.question_text_ar && (
@@ -1789,7 +1944,7 @@ function StudentLobby({ session, setMode, player }) {
     const check = async () => {
       if (!isMounted) return;
       try {
-        const data = await get(`/sessions/${session.pin}/poll`);
+        const data = await get(`/sessions/${session.pin}/state`);
         if (!isMounted) return;
         if (data.status === 'active') {
           sfx.play('win');
@@ -1798,10 +1953,17 @@ function StudentLobby({ session, setMode, player }) {
         }
       } catch {}
       if (isMounted) {
-        timer = setTimeout(check, 4000);
+        timer = setTimeout(check, 1000); // 1000ms in lobby
       }
     };
     check();
+
+    const onVisibility = () => {
+      if (!document.hidden && isMounted) {
+        check();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     // Instant WebSocket trigger when Teacher starts the game
     const unsubscribe = subscribeToSession(session.pin, {
@@ -1813,6 +1975,7 @@ function StudentLobby({ session, setMode, player }) {
 
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       unsubscribe();
       if (timer) clearTimeout(timer);
     };
@@ -1859,8 +2022,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   const [selected, setSelected] = useState(null);
   const [pendingResult, setPendingResult] = useState(null);
   const [isRevealed, setIsRevealed] = useState(false);
-  const [timer, setTimer] = useState(0);
-  const [startTime, setStartTime] = useState(null);
+  const [timerDisplay, setTimerDisplay] = useState(20);
+  const [isLeadPeriod, setIsLeadPeriod] = useState(false);
   const [gameStatus, setGameStatus] = useState('active');
   const [correctChoiceId, setCorrectChoiceId] = useState(null);
 
@@ -1871,7 +2034,12 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
   const lastQId = useRef(null);
   const qIndexRef = useRef(null);
-  const interval = useRef(null);
+  const questionStartedAtRef = useRef(null);
+  const timeLimitRef = useRef(20);
+  const currentVersionRef = useRef(0);
+  const preDeadlinePolledRef = useRef(false);
+  const lastSoundTickRef = useRef(null);
+
   const playedSound = useRef(false);
   const midBoardTimer = useRef(null);
   const pendingResultRef = useRef(null);
@@ -1881,6 +2049,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   isRevealedRef.current = isRevealed;
   const playerRef = useRef(player);
   playerRef.current = player;
+  const gameStatusRef = useRef(gameStatus);
+  gameStatusRef.current = gameStatus;
 
   const applyResultSoundAndScore = useCallback((res) => {
     if (!res) return;
@@ -1897,34 +2067,96 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     }
   }, [setPlayer]);
 
-  // Real-time WebSocket subscription for instant question changes & answer reveals
+  const handleNewQuestion = useCallback((qData, qIdx, totalCount, startedAt = null, version = 0) => {
+    if (!qData) return;
+    if (version && currentVersionRef.current && version < currentVersionRef.current) {
+      return; // Ignore stale version
+    }
+    if (version) {
+      currentVersionRef.current = version;
+    }
+
+    lastQId.current = qData.id;
+    qIndexRef.current = qIdx;
+    questionStartedAtRef.current = startedAt;
+    timeLimitRef.current = qData.time_limit || 20;
+    preDeadlinePolledRef.current = false;
+    lastSoundTickRef.current = null;
+
+    setQuestion(qData);
+    setQNumber(qIdx + 1);
+    setTotalQ(totalCount);
+    setSelected(null);
+    setPendingResult(null);
+    pendingResultRef.current = null;
+    submittingRef.current = false;
+    pendingPromiseRef.current = null;
+    setIsRevealed(false);
+    setCorrectChoiceId(null);
+    setShowMidBoard(false);
+    playedSound.current = false;
+    if (midBoardTimer.current) clearTimeout(midBoardTimer.current);
+
+    sfx.play('join');
+  }, []);
+
+  // Precise Authoritative Timer Tick (~150ms redraw, never accumulates)
   useEffect(() => {
-    const handleNewQuestion = (qData, qIdx, totalCount) => {
-      if (!qData) return;
-      lastQId.current = qData.id;
-      qIndexRef.current = qIdx;
-      setQuestion(qData);
-      setQNumber(qIdx + 1);
-      setTotalQ(totalCount);
-      setSelected(null);
-      setPendingResult(null);
-      pendingResultRef.current = null;
-      submittingRef.current = false;
-      pendingPromiseRef.current = null;
-      setIsRevealed(false);
-      setCorrectChoiceId(null);
-      setShowMidBoard(false);
-      playedSound.current = false;
-      if (midBoardTimer.current) clearTimeout(midBoardTimer.current);
-      setTimer(qData.time_limit || 20);
-      setStartTime(Date.now());
-      sfx.play('join');
+    if (gameStatus !== 'active' || !question || isRevealed) return;
+
+    const updateCountdown = () => {
+      const now = serverNow();
+      const startedAt = questionStartedAtRef.current;
+      const limit = timeLimitRef.current || 20;
+
+      if (!startedAt) {
+        setTimerDisplay(limit);
+        setIsLeadPeriod(false);
+        return;
+      }
+
+      if (now < startedAt) {
+        // Lead period before answering opens
+        setIsLeadPeriod(true);
+        setTimerDisplay(limit);
+        return;
+      }
+
+      setIsLeadPeriod(false);
+      const elapsedSec = (now - startedAt) / 1000;
+      const remainingSec = Math.max(0, limit - elapsedSec);
+      const rounded = Math.ceil(remainingSec);
+
+      setTimerDisplay(rounded);
+
+      if (rounded <= 4 && rounded > 0 && lastSoundTickRef.current !== rounded) {
+        lastSoundTickRef.current = rounded;
+        sfx.play('click');
+      }
+
+      if (remainingSec <= 0 && !isRevealedRef.current) {
+        triggerReveal();
+      }
     };
 
+    updateCountdown();
+    const tickInterval = setInterval(updateCountdown, 150);
+
+    return () => clearInterval(tickInterval);
+  }, [gameStatus, question, isRevealed]);
+
+  // Real-time WebSocket subscription for instant question changes & answer reveals
+  useEffect(() => {
     const unsubscribe = subscribeToSession(session?.pin, {
       QuestionChanged: (data) => {
         if (data?.question) {
-          handleNewQuestion(data.question, data.current_question_index ?? 0, data.total_questions ?? 1);
+          handleNewQuestion(
+            data.question,
+            data.current_question_index ?? 0,
+            data.total_questions ?? 1,
+            data.question_started_at || null,
+            data.state_version || 0
+          );
         }
       },
       AnswerRevealed: (data) => {
@@ -1954,12 +2186,18 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     }, () => {
       // One-time sync on reconnect
       if (!session?.pin) return;
-      get(`/sessions/${session.pin}/poll`).then(data => {
+      get(`/sessions/${session.pin}/state`).then(data => {
         if (data.status === 'completed') {
           setMode('leaderboard');
         } else if (data.current_question) {
           if (data.current_question.id !== lastQId.current || data.current_question_index !== qIndexRef.current) {
-            handleNewQuestion(data.current_question, data.current_question_index, data.total_questions);
+            handleNewQuestion(
+              data.current_question,
+              data.current_question_index,
+              data.total_questions,
+              data.question_started_at,
+              data.state_version
+            );
           }
           if (data.question_state === 'revealed' && !isRevealedRef.current) {
             triggerReveal(data.current_question.correct_choice_id);
@@ -1971,9 +2209,9 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     return () => {
       unsubscribe();
     };
-  }, [session?.pin, setMode, setPlayer]);
+  }, [session?.pin, setMode, setPlayer, handleNewQuestion]);
 
-  // Gentle fallback polling every 4 seconds (instead of aggressive 500ms request stacking)
+  // Adaptive polling: 2000ms while active, 1000ms otherwise, extra poll before deadline
   useEffect(() => {
     let isMounted = true;
     let isPolling = false;
@@ -1982,8 +2220,13 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     const pollState = async () => {
       if (!isMounted) return;
       try {
-        const data = await get(`/sessions/${session.pin}/poll`);
+        const data = await get(`/sessions/${session.pin}/state`);
         if (!isMounted) return;
+
+        // Version check to ignore stale/out-of-order responses
+        if (data.state_version !== undefined && data.state_version < currentVersionRef.current) {
+          return;
+        }
 
         if (data.status === 'completed') {
           sfx.play('win');
@@ -1993,34 +2236,27 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         }
         setGameStatus(data.status);
 
-        // Fallback for new question if WebSocket missed
         const isNewQuestion = data.current_question && (
           data.current_question.id !== lastQId.current ||
           data.current_question_index !== qIndexRef.current
         );
 
-        if (isNewQuestion && data.status === 'active') {
-          lastQId.current = data.current_question.id;
-          qIndexRef.current = data.current_question_index;
-          setQuestion(data.current_question);
-          setQNumber(data.current_question_index + 1);
-          setTotalQ(data.total_questions);
-          setSelected(null);
-          setPendingResult(null);
-          pendingResultRef.current = null;
-          submittingRef.current = false;
-          pendingPromiseRef.current = null;
-          setIsRevealed(false);
-          setCorrectChoiceId(null);
-          setShowMidBoard(false);
-          playedSound.current = false;
-          if (midBoardTimer.current) clearTimeout(midBoardTimer.current);
-          setTimer(data.current_question.time_limit);
-          setStartTime(Date.now());
-          sfx.play('join');
+        if (isNewQuestion && (data.status === 'active' || data.status === 'waiting')) {
+          handleNewQuestion(
+            data.current_question,
+            data.current_question_index,
+            data.total_questions,
+            data.question_started_at,
+            data.state_version
+          );
         } else if (data.current_question) {
-          // If the teacher revealed the answer:
-          if (data.question_state === 'revealed' && !isRevealed) {
+          if (data.question_started_at) {
+            questionStartedAtRef.current = data.question_started_at;
+          }
+          if (data.state_version) {
+            currentVersionRef.current = data.state_version;
+          }
+          if (data.question_state === 'revealed' && !isRevealedRef.current) {
             triggerReveal(data.current_question.correct_choice_id);
           }
         }
@@ -2029,42 +2265,54 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
     const scheduleNext = () => {
       if (!isMounted) return;
+      const startedAt = questionStartedAtRef.current;
+      const limit = timeLimitRef.current || 20;
+      const now = serverNow();
+
+      let delay = 1000;
+      if (gameStatusRef.current === 'active' && !isRevealedRef.current && startedAt) {
+        delay = 2000;
+
+        // Extra poll shortly before deadline
+        const remaining = limit - (now - startedAt) / 1000;
+        if (remaining > 0.8 && remaining < 2.5 && !preDeadlinePolledRef.current) {
+          delay = Math.max(300, Math.round((remaining - 0.5) * 1000));
+          preDeadlinePolledRef.current = true;
+        }
+      }
+
       pollTimer = setTimeout(async () => {
         if (isMounted && !isPolling) {
           isPolling = true;
           try {
-            await pollState();
+            if (!document.hidden) {
+              await pollState();
+            }
           } finally {
             isPolling = false;
             scheduleNext();
           }
+        } else {
+          scheduleNext();
         }
-      }, 4000);
+      }, delay);
     };
 
     pollState().then(scheduleNext);
 
+    const onVisibility = () => {
+      if (!document.hidden && isMounted) {
+        pollState();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [session, isRevealed, setMode]);
-
-  // Countdown timer
-  useEffect(() => {
-    if (gameStatus !== 'active' || !question || timer <= 0 || isRevealed) return;
-    const t = setTimeout(() => {
-      setTimer(s => {
-        const next = Math.max(0, s - 1);
-        if (next <= 4 && next > 0) sfx.play('click');
-        if (next === 0 && !isRevealed) {
-          triggerReveal();
-        }
-        return next;
-      });
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [timer, gameStatus, question, isRevealed]);
+  }, [session, handleNewQuestion, setMode]);
 
   // After reveal => fetch mid-game leaderboard after 3 seconds
   useEffect(() => {
@@ -2092,7 +2340,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     if (revealedCorrectId) {
       setCorrectChoiceId(revealedCorrectId);
     }
-    // If request is still in-flight, wait for it so we don't prematurely show "Wrong"!
+    // If request is still in-flight, wait for it so we don't prematurely show 'Wrong'!
     if (submittingRef.current && pendingPromiseRef.current) {
       pendingPromiseRef.current.then(res => {
         applyResultSoundAndScore(res);
@@ -2116,16 +2364,19 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   }
 
   async function submitAnswer(choiceId) {
-    if (selected !== null || isRevealed) return;
+    if (selected !== null || isRevealed || isLeadPeriod || timerDisplay <= 0) return;
     sfx.play('click');
     setSelected(choiceId);
     submittingRef.current = true;
-    const timeTaken = (Date.now() - startTime) / 1000;
+
+    // Send client time_taken for backward compatibility; server computes authoritatively
+    const startedAt = questionStartedAtRef.current || serverNow();
+    const clientTimeTaken = Math.max(0, (serverNow() - startedAt) / 1000);
 
     const prom = post(`/sessions/${session.pin}/answer`, {
       player_id: player.id,
       choice_id: choiceId,
-      time_taken: timeTaken,
+      time_taken: clientTimeTaken,
     });
     pendingPromiseRef.current = prom;
 
@@ -2142,6 +2393,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       }
     } catch (e) {
       submittingRef.current = false;
+      // Handle 4xx rejection gracefully (treat as time's up / locked out without crashing)
       const errRes = { is_correct: false, points_earned: 0, total_score: player?.score || 0 };
       pendingResultRef.current = errRes;
       setPendingResult(errRes);
@@ -2310,9 +2562,9 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         </div>
 
         {/* Circular Countdown Timer */}
-        <div className={`countdown-clock ${timer <= 5 && !isRevealed ? 'is-urgent' : ''} ${isRevealed ? 'time-finished' : ''}`}>
+        <div className={`countdown-clock ${timerDisplay <= 5 && !isRevealed && !isLeadPeriod ? 'is-urgent' : ''} ${isRevealed ? 'time-finished' : ''} ${isLeadPeriod ? 'is-lead' : ''}`}>
           <Clock3 size={20} />
-          <span className="clock-number">{isRevealed ? 'انتهى الوقت' : `${timer}s`}</span>
+          <span className="clock-number">{isRevealed ? 'انتهى الوقت' : isLeadPeriod ? 'استعد...' : `${timerDisplay}s`}</span>
         </div>
 
         <div className="hud-streak-chip">
@@ -2345,7 +2597,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
               key={c.id}
               className={`kahoot-btn tone-${shape.color} ${isSelected ? 'selected-btn' : ''} ${isCorrect ? 'correct-btn' : ''} ${isWrong ? 'wrong-btn' : ''}`}
               onClick={() => submitAnswer(c.id)}
-              disabled={selected !== null || timer <= 0 || isRevealed}
+              disabled={selected !== null || timerDisplay <= 0 || isRevealed || isLeadPeriod}
             >
               <div className="shape-disc">{shape.symbol}</div>
               <div className="kahoot-text-box">
