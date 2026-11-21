@@ -5,9 +5,9 @@ use App\Http\Controllers\GameController;
 use Illuminate\Support\Facades\Route;
 
 // Session management
-Route::post('/sessions', [SessionController::class, 'store']);
-Route::get('/sessions/{pin}', [SessionController::class, 'show']);
-Route::post('/sessions/{pin}/join', [SessionController::class, 'join']);
+Route::post('/sessions', [SessionController::class, 'store'])->middleware('throttle:api.create');
+Route::get('/sessions/{pin}', [SessionController::class, 'show'])->middleware('throttle:api.pin');
+Route::post('/sessions/{pin}/join', [SessionController::class, 'join'])->middleware('throttle:api.join');
 Route::get('/sessions/{pin}/players', [SessionController::class, 'players']);
 
 // Teacher controls (protected by teacher token)
@@ -23,7 +23,7 @@ Route::middleware('teacher.auth')->group(function () {
 
 // Game play
 Route::get('/sessions/{pin}/current-question', [GameController::class, 'currentQuestion']);
-Route::post('/sessions/{pin}/answer', [GameController::class, 'answer']);
+Route::post('/sessions/{pin}/answer', [GameController::class, 'answer'])->middleware('throttle:api.answer');
 Route::get('/sessions/{pin}/my-result', [GameController::class, 'myResult']);
 Route::get('/sessions/{pin}/leaderboard', [GameController::class, 'leaderboard']);
 Route::get('/sessions/{pin}/results', [GameController::class, 'results']);

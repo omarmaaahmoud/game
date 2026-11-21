@@ -2,7 +2,10 @@
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -19,6 +22,32 @@ class AppServiceProvider extends ServiceProvider
                 DB::statement('PRAGMA cache_size = -20000;');
             } catch (\Throwable $e) {}
         }
+
+        // Configure Rate Limiters
+        RateLimiter::for('api.create', function (Request $request) {
+            return Limit::perMinute(20)->by($request->ip());
+        });
+
+        RateLimiter::for('api.pin', function (Request $request) {
+            $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
+            return Limit::perMinute(120)->by($pin . '|' . $request->ip());
+        });
+
+        RateLimiter::for('api.join', function (Request $request) {
+            $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
+            return Limit::perMinute(60)->by($pin . '|' . $request->ip());
+        });
+
+        RateLimiter::for('api.answer', function (Request $request) {
+            $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
+            // Rate limit answers by pin + player token/id so classroom students sharing NAT IP are not throttled
+            $playerKey = $request->header('X-Player-Token')
+                ?? $request->input('player_token')
+                ?? $request->input('player_id')
+                ?? $request->ip();
+
+            return Limit::perMinute(60)->by($pin . '|' . $playerKey);
+        });
     }
 }
 

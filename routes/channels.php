@@ -7,5 +7,5 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 });
 
 Broadcast::channel('session.{pin}', function ($user = null, $pin = null) {
-    return true;
+    return false;
 });

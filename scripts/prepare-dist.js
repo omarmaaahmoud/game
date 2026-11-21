@@ -90,7 +90,7 @@ const indexHtmlContent = `<!doctype html>
 
 fs.writeFileSync(path.join(distDir, 'index.html'), indexHtmlContent, 'utf-8');
 
-// 7. Copy vercel.json to dist (without outputDirectory since dist IS the output)
+// 7. Copy vercel.json to dist (without outputDirectory since dist IS the output, preserving headers & rewrites)
 const vercelConfig = path.join(rootDir, 'vercel.json');
 if (fs.existsSync(vercelConfig)) {
   const vc = JSON.parse(fs.readFileSync(vercelConfig, 'utf-8'));
