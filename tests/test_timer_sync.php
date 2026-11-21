@@ -39,6 +39,7 @@ use App\Models\Answer;
 
 // ── Run migrations in memory ──
 Artisan::call('migrate', ['--force' => true]);
+config(['quiz.reveal_on_answer' => true]);
 
 // ── Test Framework ──
 $passed = 0;
@@ -89,6 +90,18 @@ function createTestSession(): array {
         'choice_text' => '5', 'choice_text_ar' => '٥', 'is_correct' => false, 'order' => 1,
     ]);
     return [$session, $question, $correct, $wrong];
+}
+
+/** Helper to create an authenticated test player */
+function createTestPlayer(GameSession $session, string $name = 'Test Student', string $avatar = 'robot'): array {
+    $token = bin2hex(random_bytes(16));
+    $player = $session->players()->create([
+        'name' => $name,
+        'avatar' => $avatar,
+        'token_hash' => hash('sha256', $token),
+        'joined_at' => now(),
+    ]);
+    return [$player, $token];
 }
 
 /** Create a session with multiple questions */
@@ -247,15 +260,15 @@ echo "\n── Test 4: answer() accepted during active window, score computed fr
     // Simulate: shift question_started_at to 3s ago so we're in the answering window
     $session->update(['question_started_at' => nowMs() - 3000]);
 
-    $player = $session->players()->create([
-        'name' => 'Test Student', 'avatar' => 'robot', 'joined_at' => now(),
-    ]);
+    [$player, $token] = createTestPlayer($session, 'Test Student', 'robot');
 
     $request = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
         'choice_id' => $correct->id,
+        'player_token' => $token,
         'time_taken' => 999, // should be IGNORED
     ]);
+    $request->headers->set('X-Player-Token', $token);
     $response = $gameController->answer($request, $session->pin);
     $data = json_decode($response->getContent(), true);
 
@@ -285,11 +298,13 @@ echo "\n── Test 5: answer() rejected before start, accepted at and after sta
 
     // Case A: 100ms before start timestamp (TOO_EARLY)
     $session->update(['question_started_at' => nowMs() + 100]);
-    $playerA = $session->players()->create(['name' => 'Early 100ms', 'avatar' => 'ninja', 'joined_at' => now()]);
+    [$playerA, $tokenA] = createTestPlayer($session, 'Early 100ms', 'ninja');
     $reqA = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $playerA->id,
         'choice_id' => $correct->id,
+        'player_token' => $tokenA,
     ]);
+    $reqA->headers->set('X-Player-Token', $tokenA);
     $respA = $gameController->answer($reqA, $session->pin);
     $dataA = json_decode($respA->getContent(), true);
 
@@ -301,11 +316,13 @@ echo "\n── Test 5: answer() rejected before start, accepted at and after sta
     // Case B: Exactly at start timestamp (nowMs === startedAt)
     $nowExact = nowMs();
     $session->update(['question_started_at' => $nowExact]);
-    $playerB = $session->players()->create(['name' => 'Exact Start', 'avatar' => 'robot', 'joined_at' => now()]);
+    [$playerB, $tokenB] = createTestPlayer($session, 'Exact Start', 'robot');
     $reqB = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $playerB->id,
         'choice_id' => $correct->id,
+        'player_token' => $tokenB,
     ]);
+    $reqB->headers->set('X-Player-Token', $tokenB);
     $respB = $gameController->answer($reqB, $session->pin);
     $dataB = json_decode($respB->getContent(), true);
 
@@ -315,11 +332,13 @@ echo "\n── Test 5: answer() rejected before start, accepted at and after sta
 
     // Case C: After start timestamp (normal answering window)
     $session->update(['question_started_at' => nowMs() - 2000]);
-    $playerC = $session->players()->create(['name' => 'Normal 2s', 'avatar' => 'wizard', 'joined_at' => now()]);
+    [$playerC, $tokenC] = createTestPlayer($session, 'Normal 2s', 'wizard');
     $reqC = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $playerC->id,
         'choice_id' => $correct->id,
+        'player_token' => $tokenC,
     ]);
+    $reqC->headers->set('X-Player-Token', $tokenC);
     $respC = $gameController->answer($reqC, $session->pin);
     $dataC = json_decode($respC->getContent(), true);
 
@@ -341,14 +360,14 @@ echo "\n── Test 6: answer() rejected after deadline + grace (TIME_EXPIRED) �
     // Set question_started_at to 30s ago (time_limit=20s, grace=1s, so deadline was 9s ago)
     $session->update(['question_started_at' => nowMs() - 30000]);
 
-    $player = $session->players()->create([
-        'name' => 'Late Larry', 'avatar' => 'dragon', 'joined_at' => now(),
-    ]);
+    [$player, $token] = createTestPlayer($session, 'Late Larry', 'dragon');
 
     $request = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
         'choice_id' => $correct->id,
+        'player_token' => $token,
     ]);
+    $request->headers->set('X-Player-Token', $token);
     $response = $gameController->answer($request, $session->pin);
     $data = json_decode($response->getContent(), true);
 
@@ -370,16 +389,16 @@ echo "\n── Test 7: Client time_taken is ignored; server computes its own ─
     // 5s ago
     $session->update(['question_started_at' => nowMs() - 5000]);
 
-    $player = $session->players()->create([
-        'name' => 'Trickster', 'avatar' => 'wizard', 'joined_at' => now(),
-    ]);
+    [$player, $token] = createTestPlayer($session, 'Trickster', 'wizard');
 
     // Client claims time_taken = 0.001 (cheating — impossibly fast)
     $request = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
         'choice_id' => $correct->id,
+        'player_token' => $token,
         'time_taken' => 0.001,
     ]);
+    $request->headers->set('X-Player-Token', $token);
     $response = $gameController->answer($request, $session->pin);
     $data = json_decode($response->getContent(), true);
 
@@ -401,14 +420,14 @@ echo "\n── Test 8: Duplicate answer returns 422, no double-scoring ──\n"
     $session->refresh();
     $session->update(['question_started_at' => nowMs() - 2000]);
 
-    $player = $session->players()->create([
-        'name' => 'Double Click', 'avatar' => 'cat', 'joined_at' => now(),
-    ]);
+    [$player, $token] = createTestPlayer($session, 'Double Click', 'cat');
 
     $request1 = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
         'choice_id' => $correct->id,
+        'player_token' => $token,
     ]);
+    $request1->headers->set('X-Player-Token', $token);
     $response1 = $gameController->answer($request1, $session->pin);
     assert_eq(200, $response1->getStatusCode(), 'First answer: HTTP 200');
 
@@ -418,7 +437,9 @@ echo "\n── Test 8: Duplicate answer returns 422, no double-scoring ──\n"
     $request2 = \Illuminate\Http\Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
         'choice_id' => $wrong->id,
+        'player_token' => $token,
     ]);
+    $request2->headers->set('X-Player-Token', $token);
     $response2 = $gameController->answer($request2, $session->pin);
     assert_eq(422, $response2->getStatusCode(), 'Duplicate answer: HTTP 422');
 

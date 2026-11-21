@@ -101,7 +101,29 @@ class GameController extends Controller
             ], 422);
         }
 
-        $player = Player::findOrFail($validated['player_id']);
+        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        if (!$playerToken) {
+            return response()->json([
+                'error' => 'Player authorization required',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $player = Player::where('id', $validated['player_id'])->first();
+        if (!$player || (int) $player->game_session_id !== (int) $session->id) {
+            return response()->json([
+                'error' => 'Unauthorized player action',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $providedPlayerHash = hash('sha256', (string) $playerToken);
+        if (!$player->token_hash || !hash_equals($player->token_hash, $providedPlayerHash)) {
+            return response()->json([
+                'error' => 'Unauthorized player action',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
 
         // Check if choice belongs to this question
         $choice = $question->choices()->find($validated['choice_id']);

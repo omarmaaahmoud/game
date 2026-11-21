@@ -33,8 +33,12 @@ class SessionController extends Controller
             'questions.*.choices.*.is_correct' => 'required|boolean',
         ]);
 
+        $teacherToken = bin2hex(random_bytes(32));
+        $teacherTokenHash = hash('sha256', $teacherToken);
+
         $session = GameSession::create([
             'pin' => GameSession::generatePin(),
+            'teacher_token_hash' => $teacherTokenHash,
             'teacher_name' => $validated['teacher_name'],
             'title' => $validated['title'],
         ]);
@@ -60,6 +64,7 @@ class SessionController extends Controller
         return response()->json([
             'session' => $session->load('questions.choices'),
             'pin' => $session->pin,
+            'teacher_token' => $teacherToken,
         ], 201);
     }
 
@@ -93,9 +98,13 @@ class SessionController extends Controller
             'avatar' => 'required|string|max:50',
         ]);
 
+        $playerToken = bin2hex(random_bytes(32));
+        $playerTokenHash = hash('sha256', $playerToken);
+
         $player = $session->players()->create([
             'name' => $validated['name'],
             'avatar' => $validated['avatar'],
+            'token_hash' => $playerTokenHash,
             'joined_at' => now(),
         ]);
 
@@ -112,6 +121,7 @@ class SessionController extends Controller
 
         return response()->json([
             'player' => $player,
+            'player_token' => $playerToken,
             'session' => [
                 'title' => $session->title,
                 'status' => $session->status,

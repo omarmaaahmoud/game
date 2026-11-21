@@ -15,12 +15,17 @@ class DatabaseSeeder extends Seeder
         $session = GameSession::firstOrCreate(
             ['pin' => '123456'],
             [
+                'teacher_token_hash' => hash('sha256', 'tecorbi-demo-teacher-token-123456'),
                 'teacher_name' => 'الأستاذ أحمد',
                 'title' => 'Tecorbi Game 🎮',
                 'status' => 'waiting',
                 'current_question_index' => 0,
             ]
         );
+
+        if ($session->teacher_token_hash === null) {
+            $session->update(['teacher_token_hash' => hash('sha256', 'tecorbi-demo-teacher-token-123456')]);
+        }
 
         if ($session->questions()->count() === 0) {
             $q1 = $session->questions()->create([
