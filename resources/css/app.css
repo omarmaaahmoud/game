@@ -5759,6 +5759,13 @@ html, body {
   color: #08102B !important;
 }
 
+.space-player-bubble.is-me-bubble {
+  border: 2px solid #3925DE !important;
+  background: #EEF2FF !important;
+  box-shadow: 0 4px 14px rgba(57, 37, 222, 0.18) !important;
+  transform: scale(1.02);
+}
+
 .spb-name {
   color: #08102B !important;
   font-weight: 800;

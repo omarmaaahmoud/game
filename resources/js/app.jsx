@@ -1997,6 +1997,22 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
 
 /* ══════════════════════ STUDENT: LOBBY WAIT ══════════════════════ */
 function StudentLobby({ session, setMode, player }) {
+  const [players, setPlayers] = useState([]);
+  const prevCount = useRef(0);
+
+  const pollPlayers = useCallback(async () => {
+    if (!session?.pin) return;
+    try {
+      const data = await get(`/sessions/${session.pin}/players`);
+      const newPlayers = data.players || [];
+      if (newPlayers.length > prevCount.current && prevCount.current > 0) {
+        sfx.play('join');
+      }
+      prevCount.current = newPlayers.length;
+      setPlayers(newPlayers);
+    } catch {}
+  }, [session?.pin]);
+
   useEffect(() => {
     let isMounted = true;
     let timer = null;
@@ -2004,9 +2020,12 @@ function StudentLobby({ session, setMode, player }) {
     const check = async () => {
       if (!isMounted) return;
       try {
-        const data = await get(`/sessions/${session.pin}/state`);
+        const [stateData] = await Promise.all([
+          get(`/sessions/${session.pin}/state`),
+          pollPlayers()
+        ]);
         if (!isMounted) return;
-        if (data.status === 'active') {
+        if (stateData && stateData.status === 'active') {
           sfx.play('win');
           setMode('student-play');
           return;
@@ -2025,11 +2044,20 @@ function StudentLobby({ session, setMode, player }) {
     };
     document.addEventListener('visibilitychange', onVisibility);
 
-    // Instant WebSocket trigger when Teacher starts the game
+    // Instant WebSocket triggers
     const unsubscribe = subscribeToSession(session.pin, {
       GameStarted: () => {
         sfx.play('win');
         setMode('student-play');
+      },
+      PlayerJoined: (data) => {
+        if (data?.player) {
+          setPlayers(prev => {
+            if (prev.some(p => p.id === data.player.id)) return prev;
+            sfx.play('join');
+            return [...prev, data.player];
+          });
+        }
       },
     }, check);
 
@@ -2039,7 +2067,7 @@ function StudentLobby({ session, setMode, player }) {
       unsubscribe();
       if (timer) clearTimeout(timer);
     };
-  }, [session, setMode]);
+  }, [session, setMode, pollPlayers]);
 
   return (
     <main className="space-lobby-view student-waiting-arena-space">
@@ -2066,9 +2094,46 @@ function StudentLobby({ session, setMode, player }) {
           <span>شخصيتك:</span>
           <strong>{getAvatar(player.avatar).name}</strong>
         </div>
-        <div className="tips-banner-space">
-          <Sparkles size={18} /> نصيحة: الإجابة الأسرع تمنحك نقاط XP إضافية وبونص سرعة!
+      </div>
+
+      {/* Connected Players in Lobby */}
+      <div className="space-players-section" style={{ maxWidth: '800px', margin: '20px auto 0', width: '100%' }}>
+        <div className="sps-header">
+          <div className="sps-title">
+            <Users size={20} />
+            <h2>الطلاب المنضمون للغرفة</h2>
+          </div>
+          <span className="sps-counter-chip">{players.length > 0 ? players.length : 1} أبطال جاهزون ⚡</span>
         </div>
+
+        {players.length === 0 ? (
+          <div className="space-players-empty">
+            <div className="space-radar-glow">
+              <div className="srg-circle srg-1" />
+              <div className="srg-circle srg-2" />
+              <Gamepad2 size={36} className="srg-gamepad" />
+            </div>
+            <h3>في انتظار باقي الأبطال...</h3>
+          </div>
+        ) : (
+          <div className="space-players-grid">
+            {players.map(p => {
+              const isMe = p.id === player.id;
+              return (
+                <div key={p.id} className={`space-player-bubble ${isMe ? 'is-me-bubble' : ''}`}>
+                  <span className="spb-emoji"><AvatarDisplay avatarId={p.avatar} /></span>
+                  <span className="spb-name">
+                    {p.name} {isMe && <span style={{ color: '#3925DE', fontSize: '0.85em', display: 'block', fontWeight: '900' }}>⭐ (أنت)</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="tips-banner-space" style={{ maxWidth: '600px', margin: '16px auto 0' }}>
+        <Sparkles size={18} /> نصيحة: الإجابة الأسرع تمنحك نقاط XP إضافية وبونص سرعة!
       </div>
     </main>
   );
