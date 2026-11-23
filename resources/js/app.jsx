@@ -308,27 +308,8 @@ const AVATARS = [
 
 const getAvatar = (id) => AVATARS.find(a => a.id === id) || AVATARS[0];
 
-const ACCESSORIES = [
-  { id: 'none', name: 'بدون', emoji: '❌', category: 'all' },
-  { id: 'crown', name: 'تاج ذهبي', emoji: '👑', category: 'hat' },
-  { id: 'cap', name: 'طاقية', emoji: '🧢', category: 'hat' },
-  { id: 'tophat', name: 'قبعة سحرية', emoji: '🎩', category: 'hat' },
-  { id: 'party-hat', name: 'قبعة حفلة', emoji: '🥳', category: 'hat' },
-  { id: 'glasses', name: 'نظارة شمس', emoji: '🕶️', category: 'face' },
-  { id: 'mask', name: 'قناع بطل', emoji: '🦸', category: 'face' },
-  { id: 'star', name: 'نجمة', emoji: '⭐', category: 'face' },
-  { id: 'heart', name: 'قلب', emoji: '❤️', category: 'face' },
-  { id: 'fire', name: 'نار', emoji: '🔥', category: 'face' },
-];
-
-function AvatarDisplay({ avatarId, className = '', style = {}, imgStyle = {}, accessory = 'none' }) {
+function AvatarDisplay({ avatarId, className = '', style = {}, imgStyle = {} }) {
   const a = getAvatar(avatarId);
-  const acc = ACCESSORIES.find(x => x.id === accessory);
-  const overlay = acc && acc.id !== 'none' ? (
-    <span className="avatar-accessory-overlay" style={{ position: 'absolute', top: acc.category === 'hat' ? '-0.35em' : '0.1em', left: '50%', transform: 'translateX(-50%)', fontSize: '0.7em', zIndex: 3, pointerEvents: 'none', textShadow: '0 2px 6px rgba(0,0,0,0.35)' }}>
-      {acc.emoji}
-    </span>
-  ) : null;
 
   if (a.image) {
     return (
@@ -346,14 +327,12 @@ function AvatarDisplay({ avatarId, className = '', style = {}, imgStyle = {}, ac
             ...imgStyle,
           }}
         />
-        {overlay}
       </span>
     );
   }
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <span className={className} style={style}>{a.emoji}</span>
-      {overlay}
     </span>
   );
 }
@@ -1907,8 +1886,6 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
   const [sessionInfo, setSessionInfo] = useState(null);
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState('spongebob');
-  const [accessory, setAccessory] = useState('none');
-  const [avatarConfirmed, setAvatarConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1938,7 +1915,7 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
     setLoading(true);
     sfx.play('click');
     try {
-      const data = await post(`/sessions/${pin}/join`, { name: name.trim(), avatar, accessory });
+      const data = await post(`/sessions/${pin}/join`, { name: name.trim(), avatar });
       if (!data || !data.player) { setNotice('❌ حدث خطأ غير متوقع. حاول مرة أخرى'); setLoading(false); return; }
       if (data.player_token) {
         savePlayerAuth(pin, data.player, data.player_token);
@@ -1968,82 +1945,30 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
           </div>
         )}
 
-        <h2 className="select-avatar-title-space">{avatarConfirmed ? `${getAvatar(avatar).name} 🎭` : 'اختر بطلك الكرتوني 🌟'}</h2>
-        <p className="select-avatar-subtitle-space">{avatarConfirmed ? 'البس بطلك اكسسوار مميز!' : 'اختر الشخصية التي ستمثلك على منصة التتويج ولوحة الشرف:'}</p>
+        <h2 className="select-avatar-title-space">اختر بطلك الكرتوني 🌟</h2>
+        <p className="select-avatar-subtitle-space">اختر الشخصية التي ستمثلك على منصة التتويج ولوحة الشرف:</p>
 
-        {!avatarConfirmed ? (
-          /* ── Step 1: Avatar Grid ── */
-          <div className="avatars-card-grid">
-            {AVATARS.map(a => (
-              <button
-                key={a.id}
-                type="button"
-                className={`avatar-character-card-space ${avatar === a.id ? 'is-selected' : ''}`}
-                onClick={() => { sfx.play('click'); setAvatar(a.id); setAvatarConfirmed(true); }}
-              >
-                {a.image ? (
-                  <div className="avatar-img-container">
-                    <img src={a.image} alt={a.name} className="avatar-card-figure" />
-                  </div>
-                ) : (
-                  <span className="character-emoji">{a.emoji}</span>
-                )}
-                <strong className="character-name">{a.name}</strong>
-                <small className="character-role">{a.role}</small>
-              </button>
-            ))}
-          </div>
-        ) : (
-          /* ── Step 2: Close-up + Accessories ── */
-          <div className="avatar-closeup-section">
-            <div className="avatar-closeup-preview">
-              {getAvatar(avatar).image ? (
-                <div className="closeup-img-wrap">
-                  <img src={getAvatar(avatar).image} alt={getAvatar(avatar).name} className="closeup-avatar-img" />
-                  {accessory !== 'none' && (
-                    <span className="closeup-accessory">
-                      {ACCESSORIES.find(x => x.id === accessory)?.emoji}
-                    </span>
-                  )}
+        {/* ── Avatar Grid (Direct Selection) ── */}
+        <div className="avatars-card-grid">
+          {AVATARS.map(a => (
+            <button
+              key={a.id}
+              type="button"
+              className={`avatar-character-card-space ${avatar === a.id ? 'is-selected' : ''}`}
+              onClick={() => { sfx.play('click'); setAvatar(a.id); }}
+            >
+              {a.image ? (
+                <div className="avatar-img-container">
+                  <img src={a.image} alt={a.name} className="avatar-card-figure" />
                 </div>
               ) : (
-                <div className="closeup-emoji-wrap">
-                  <span className="closeup-avatar-emoji">{getAvatar(avatar).emoji}</span>
-                  {accessory !== 'none' && (
-                    <span className="closeup-accessory">
-                      {ACCESSORIES.find(x => x.id === accessory)?.emoji}
-                    </span>
-                  )}
-                </div>
+                <span className="character-emoji">{a.emoji}</span>
               )}
-              <button
-                type="button"
-                className="btn-change-avatar"
-                onClick={() => { sfx.play('click'); setAvatarConfirmed(false); setAccessory('none'); }}
-              >
-                ← غيّر الشخصية
-              </button>
-            </div>
-
-            <div className="accessories-section">
-              <h3 className="accessories-title">اكسسورات 🎭</h3>
-              <div className="accessories-grid">
-                {ACCESSORIES.map(acc => (
-                  <button
-                    key={acc.id}
-                    type="button"
-                    className={`accessory-btn ${accessory === acc.id ? 'acc-selected' : ''}`}
-                    onClick={() => { sfx.play('click'); setAccessory(acc.id); }}
-                    title={acc.name}
-                  >
-                    <span className="acc-emoji">{acc.emoji}</span>
-                    <span className="acc-name">{acc.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+              <strong className="character-name">{a.name}</strong>
+              <small className="character-role">{a.role}</small>
+            </button>
+          ))}
+        </div>
 
         <div className="player-name-field-space">
           <label>اسمك الذي سيظهر للمتسابقين</label>
