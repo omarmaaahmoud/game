@@ -16,13 +16,23 @@ class QuestionChanged implements ShouldBroadcastNow
     public array $question;
     public int $currentQuestionIndex;
     public int $totalQuestions;
+    public ?int $questionStartedAt;
+    public int $stateVersion;
 
-    public function __construct(string $pin, array $question, int $currentQuestionIndex, int $totalQuestions)
-    {
+    public function __construct(
+        string $pin,
+        array $question,
+        int $currentQuestionIndex,
+        int $totalQuestions,
+        ?int $questionStartedAt = null,
+        int $stateVersion = 0
+    ) {
         $this->pin = $pin;
         $this->question = $question;
         $this->currentQuestionIndex = $currentQuestionIndex;
         $this->totalQuestions = $totalQuestions;
+        $this->questionStartedAt = $questionStartedAt;
+        $this->stateVersion = $stateVersion;
     }
 
     public function broadcastOn(): array
@@ -46,8 +56,9 @@ class QuestionChanged implements ShouldBroadcastNow
             'question_state' => 'answering',
             'question' => $this->question,
             'total_questions' => $this->totalQuestions,
+            'question_started_at' => $this->questionStartedAt,
+            'state_version' => $this->stateVersion,
             '_ts' => (int) round(microtime(true) * 1000),
         ];
     }
 }
-

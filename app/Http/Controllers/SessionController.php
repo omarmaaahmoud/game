@@ -417,7 +417,7 @@ class SessionController extends Controller
                     ])->values()->all(),
                 ] : [];
 
-                broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions));
+                broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions, $startedAt, $currentVersion + 1));
 
                 return response()->json([
                     'status' => 'active',
@@ -426,6 +426,7 @@ class SessionController extends Controller
                     'question_state' => 'answering',
                     'question_started_at' => $startedAt,
                     'state_version' => $currentVersion + 1,
+                    'current_question' => $formattedQ,
                     'server_now_ms' => (int) round(microtime(true) * 1000),
                 ]);
             }, 5);

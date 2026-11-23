@@ -1836,7 +1836,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
                 <div className="qlp-badges-left">
                   <span className="q-badge-num">سؤال {poll.current_question_index + 1}</span>
                   <span className={`reveal-status-indicator ${isRevealed ? 'is-revealed' : 'is-answering'}`}>
-                    {isRevealed ? '✅ الإجابة معروضة' : '⏳ جاري استقبال الإجابات'}
+                    {isRevealed ? '✅ الإجابة معروضة' : (liveRemaining === 0 ? '⏰ انتهى الوقت (اضغط كشف الإجابة)' : '⏳ جاري استقبال الإجابات')}
                   </span>
                   {totalStudents > 0 && !isRevealed && (
                     <span className="qlp-answered-chip" title="الطلاب الذين أجابوا">
@@ -2304,8 +2304,9 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
   const handleNewQuestion = useCallback((qData, qIdx, totalCount, startedAt = null, version = 0) => {
     if (!qData) return;
-    if (version && currentVersionRef.current && version < currentVersionRef.current) {
-      return; // Ignore stale version
+    const isNew = qData.id !== lastQId.current || qIdx !== qIndexRef.current;
+    if (!isNew && version && currentVersionRef.current && version < currentVersionRef.current) {
+      return; // Ignore stale version only if it's the exact same question
     }
     if (version) {
       currentVersionRef.current = version;
@@ -2446,22 +2447,16 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     };
   }, [session?.pin, setMode, setPlayer, handleNewQuestion]);
 
-  // Adaptive polling: 2000ms while active, 1000ms otherwise, extra poll before deadline
+  // Adaptive polling: 1500ms while answering, 1000ms otherwise, sequentially scheduled without concurrency
   useEffect(() => {
     let isMounted = true;
-    let isPolling = false;
     let pollTimer = null;
 
     const pollState = async () => {
       if (!isMounted) return;
       try {
         const data = await get(`/sessions/${session.pin}/state`);
-        if (!isMounted) return;
-
-        // Version check to ignore stale/out-of-order responses
-        if (data.state_version !== undefined && data.state_version < currentVersionRef.current) {
-          return;
-        }
+        if (!isMounted || !data) return;
 
         if (data.status === 'completed') {
           sfx.play('win');
@@ -2484,12 +2479,20 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
             data.question_started_at,
             data.state_version
           );
-        } else if (data.current_question) {
+          return;
+        }
+
+        // Stale version check strictly for non-question state changes
+        if (data.state_version !== undefined && data.state_version < currentVersionRef.current) {
+          return;
+        }
+        if (data.state_version) {
+          currentVersionRef.current = data.state_version;
+        }
+
+        if (data.current_question) {
           if (data.question_started_at) {
             questionStartedAtRef.current = data.question_started_at;
-          }
-          if (data.state_version) {
-            currentVersionRef.current = data.state_version;
           }
           if (data.question_state === 'revealed' && !isRevealedRef.current) {
             triggerReveal(data.current_question.correct_choice_id);
@@ -2500,35 +2503,35 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
     const scheduleNext = () => {
       if (!isMounted) return;
+      if (pollTimer) clearTimeout(pollTimer);
+
       const startedAt = questionStartedAtRef.current;
       const limit = timeLimitRef.current || 20;
       const now = serverNow();
 
       let delay = 1000;
       if (gameStatusRef.current === 'active' && !isRevealedRef.current && startedAt) {
-        delay = 2000;
-
+        delay = 1500;
         // Extra poll shortly before deadline
         const remaining = limit - (now - startedAt) / 1000;
         if (remaining > 0.8 && remaining < 2.5 && !preDeadlinePolledRef.current) {
           delay = Math.max(300, Math.round((remaining - 0.5) * 1000));
           preDeadlinePolledRef.current = true;
         }
+      } else {
+        delay = 1000;
       }
 
       pollTimer = setTimeout(async () => {
-        if (isMounted && !isPolling) {
-          isPolling = true;
-          try {
-            if (!document.hidden) {
-              await pollState();
-            }
-          } finally {
-            isPolling = false;
+        if (!isMounted) return;
+        try {
+          if (!document.hidden) {
+            await pollState();
+          }
+        } finally {
+          if (isMounted) {
             scheduleNext();
           }
-        } else {
-          scheduleNext();
         }
       }, delay);
     };
@@ -2847,7 +2850,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         <div className="bqs-badge">
           <CircleHelp size={16} /> سؤال التحدي
         </div>
-        <h2 className="bqs-title">{question.question_text}</h2>
+        <h2 className="bqs-title" dir="auto">{question.question_text}</h2>
         {question.question_text_ar && (
           <p className="bqs-arabic" dir="rtl">{question.question_text_ar}</p>
         )}
