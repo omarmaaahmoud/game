@@ -117,9 +117,9 @@ class SessionController extends Controller
         }
 
         $allowedAvatars = [
-            'spongebob', 'smurf', 'patrick', 'astronaut', 'ninja', 'robot',
-            'wizard', 'superhero', 'artist', 'unicorn', 'dragon', 'cat',
-            'pirate', 'alien', 'fairy',
+            'spongebob', 'smurf', 'patrick', 'squidward', 'jerry',
+            'astronaut', 'ninja', 'robot', 'wizard', 'superhero',
+            'artist', 'unicorn', 'dragon', 'cat', 'pirate', 'alien', 'fairy',
         ];
 
         $allowedAccessories = [

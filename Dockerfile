@@ -21,11 +21,12 @@ COPY . .
 # Run post-install scripts
 RUN composer run-script post-autoload-dump 2>/dev/null || true
 
-# Create SQLite database
-RUN mkdir -p database && touch database/database.sqlite
+# Create SQLite database and storage directories
+RUN mkdir -p database storage/framework/views storage/framework/cache/data storage/framework/sessions storage/logs \
+    && touch database/database.sqlite
 
 # Set permissions
-RUN chmod -R 775 storage bootstrap/cache database
+RUN chmod -R 777 storage bootstrap/cache database
 
 # Generate key if not set
 RUN php artisan key:generate --force 2>/dev/null || true
