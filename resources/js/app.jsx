@@ -281,12 +281,12 @@ const playerGet = (pin, url, explicitToken = null) => {
 };
 
 const AVATARS = [
-  { id: 'spongebob', name: 'سبونج بوب', role: 'بطل قاع الهامور 🌟', emoji: '🧽', image: '/images/avatars/spongebob.png', color: '#eab308' },
-  { id: 'patrick', name: 'بسيط', role: 'نجم البحر ⭐', emoji: '⭐', image: '/images/avatars/patrick.png', color: '#f87171' },
+  { id: 'spongebob', name: 'سبونج بوب', role: 'بطل قاع الهامور 🌟', emoji: '🧽', image: '/images/avatars/spongebob.webp', color: '#eab308' },
+  { id: 'patrick', name: 'بسيط', role: 'نجم البحر ⭐', emoji: '⭐', image: '/images/avatars/patrick.webp', color: '#f87171' },
   { id: 'squidward', name: 'شفيق', role: 'عازف الكلارينيت 🎵', emoji: '🐙', image: '/images/avatars/squidward.webp', color: '#2dd4bf' },
   { id: 'tom', name: 'توم', role: 'القط المشاغب 😼', emoji: '🐱', image: '/images/avatars/tom.webp', color: '#64748b' },
   { id: 'jerry', name: 'جيري', role: 'الفأر الذكي 🧀', emoji: '🐭', image: '/images/avatars/jerry.webp', color: '#d97706' },
-  { id: 'smurf', name: 'سنفور', role: 'قرية السنافر 💙', emoji: '🔵', image: '/images/avatars/smurf.png', color: '#38bdf8' },
+  { id: 'smurf', name: 'سنفور', role: 'قرية السنافر 💙', emoji: '🔵', image: '/images/avatars/smurf.webp', color: '#38bdf8' },
   { id: 'papa-smurf', name: 'بابا سنفور', role: 'حكيم السنافر 🍄', emoji: '🎅', image: '/images/avatars/papa-smurf.webp', color: '#ef4444' },
   { id: 'batman', name: 'باتمان', role: 'فارس الظلام 🦇', emoji: '🦇', image: '/images/avatars/batman.webp', color: '#1e293b' },
   { id: 'gumball', name: 'غامبول', role: 'المغامر المدهش 😸', emoji: '😸', image: '/images/avatars/gumball.webp', color: '#06b6d4' },
