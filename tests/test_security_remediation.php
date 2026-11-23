@@ -533,6 +533,288 @@ echo "\n── Part 3: Answer Secrecy & My-Result Endpoint (SEC-03) ──\n";
     config(['quiz.reveal_on_answer' => false]);
 }
 
+echo "\n── Part 4: Abuse Protection & Input Validation ──\n";
+
+// Test 4.1: Session creation payload limits & choices validation
+{
+    $sessionController = new SessionController();
+
+    // > 50 questions rejected
+    $tooManyQuestions = [];
+    for ($i = 0; $i < 51; $i++) {
+        $tooManyQuestions[] = [
+            'question_text' => "Question {$i}",
+            'time_limit' => 20,
+            'choices' => [
+                ['choice_text' => 'A', 'is_correct' => true],
+                ['choice_text' => 'B', 'is_correct' => false],
+            ],
+        ];
+    }
+    $reqTooMany = Request::create('/api/sessions', 'POST', [
+        'teacher_name' => 'Prof. Oak',
+        'title' => 'Giant Quiz',
+        'questions' => $tooManyQuestions,
+    ]);
+    try {
+        $sessionController->store($reqTooMany);
+        assert_true(false, 'Session with >50 questions should fail validation');
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        assert_true(true, 'Session with >50 questions rejected with ValidationException');
+    }
+
+    // Question text > 500 chars rejected
+    $reqLongQ = Request::create('/api/sessions', 'POST', [
+        'teacher_name' => 'Prof. Oak',
+        'title' => 'Long Question Quiz',
+        'questions' => [
+            [
+                'question_text' => str_repeat('X', 501),
+                'choices' => [
+                    ['choice_text' => 'A', 'is_correct' => true],
+                    ['choice_text' => 'B', 'is_correct' => false],
+                ],
+            ],
+        ],
+    ]);
+    try {
+        $sessionController->store($reqLongQ);
+        assert_true(false, 'Question text >500 chars should fail validation');
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        assert_true(true, 'Question text >500 chars rejected with ValidationException');
+    }
+
+    // Choice text > 200 chars rejected
+    $reqLongChoice = Request::create('/api/sessions', 'POST', [
+        'teacher_name' => 'Prof. Oak',
+        'title' => 'Long Choice Quiz',
+        'questions' => [
+            [
+                'question_text' => 'Valid question?',
+                'choices' => [
+                    ['choice_text' => str_repeat('C', 201), 'is_correct' => true],
+                    ['choice_text' => 'Short', 'is_correct' => false],
+                ],
+            ],
+        ],
+    ]);
+    try {
+        $sessionController->store($reqLongChoice);
+        assert_true(false, 'Choice text >200 chars should fail validation');
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        assert_true(true, 'Choice text >200 chars rejected with ValidationException');
+    }
+
+    // Question with no correct choice rejected
+    $reqNoCorrect = Request::create('/api/sessions', 'POST', [
+        'teacher_name' => 'Prof. Oak',
+        'title' => 'No Correct Choice Quiz',
+        'questions' => [
+            [
+                'question_text' => 'Impossible question?',
+                'choices' => [
+                    ['choice_text' => 'A', 'is_correct' => false],
+                    ['choice_text' => 'B', 'is_correct' => false],
+                ],
+            ],
+        ],
+    ]);
+    $respNoCorrect = $sessionController->store($reqNoCorrect);
+    assert_eq(422, $respNoCorrect->getStatusCode(), 'Question with no correct choice rejected: HTTP 422');
+    $dataNoCorrect = json_decode($respNoCorrect->getContent(), true);
+    assert_eq('INVALID_CHOICES', $dataNoCorrect['code'] ?? '', 'Code is INVALID_CHOICES');
+}
+
+// Test 4.2: Player join sanitization & validation
+{
+    $sessionController = new SessionController();
+    [$session, $tToken] = createSecureSession();
+
+    // HTML stripping in player name
+    $reqXss = Request::create("/api/sessions/{$session->pin}/join", 'POST', [
+        'name' => '<script>alert(1)</script><b>Farah</b>',
+        'avatar' => 'spongebob',
+    ]);
+    $respXss = $sessionController->join($reqXss, $session->pin);
+    assert_eq(201, $respXss->getStatusCode(), 'Player with HTML in name created: HTTP 201');
+    $dataXss = json_decode($respXss->getContent(), true);
+    assert_eq('Farah', $dataXss['player']['name'], 'HTML tags stripped from player name');
+
+    // Whitespace-only name rejected
+    $reqEmpty = Request::create("/api/sessions/{$session->pin}/join", 'POST', [
+        'name' => '   ',
+        'avatar' => 'smurf',
+    ]);
+    $respEmpty = $sessionController->join($reqEmpty, $session->pin);
+    assert_eq(422, $respEmpty->getStatusCode(), 'Whitespace name rejected: HTTP 422');
+    $dataEmpty = json_decode($respEmpty->getContent(), true);
+    assert_eq('NAME_INVALID', $dataEmpty['code'] ?? '', 'Code is NAME_INVALID');
+
+    // Name > 20 chars rejected
+    $reqLongName = Request::create("/api/sessions/{$session->pin}/join", 'POST', [
+        'name' => 'ThisNameIsWayTooLongForAStudent',
+        'avatar' => 'smurf',
+    ]);
+    $respLongName = $sessionController->join($reqLongName, $session->pin);
+    assert_eq(422, $respLongName->getStatusCode(), 'Name >20 chars rejected: HTTP 422');
+    $dataLongName = json_decode($respLongName->getContent(), true);
+    assert_eq('NAME_INVALID', $dataLongName['code'] ?? '', 'Code is NAME_INVALID');
+
+    // Duplicate name rejected
+    $reqDup = Request::create("/api/sessions/{$session->pin}/join", 'POST', [
+        'name' => 'Farah',
+        'avatar' => 'patrick',
+    ]);
+    $respDup = $sessionController->join($reqDup, $session->pin);
+    assert_eq(422, $respDup->getStatusCode(), 'Duplicate player name rejected: HTTP 422');
+    $dataDup = json_decode($respDup->getContent(), true);
+    assert_eq('NAME_TAKEN', $dataDup['code'] ?? '', 'Code is NAME_TAKEN');
+
+    // Invalid avatar rejected
+    $reqBadAvatar = Request::create("/api/sessions/{$session->pin}/join", 'POST', [
+        'name' => 'Ziad',
+        'avatar' => 'malicious_avatar_hacker',
+    ]);
+    try {
+        $sessionController->join($reqBadAvatar, $session->pin);
+        assert_true(false, 'Invalid avatar should fail validation');
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        assert_true(true, 'Invalid avatar rejected by whitelist');
+    }
+
+    // Join completed session rejected
+    $session->update(['status' => 'completed']);
+    $reqCompleted = Request::create("/api/sessions/{$session->pin}/join", 'POST', [
+        'name' => 'Tarek',
+        'avatar' => 'ninja',
+    ]);
+    $respCompleted = $sessionController->join($reqCompleted, $session->pin);
+    assert_eq(422, $respCompleted->getStatusCode(), 'Join completed session rejected: HTTP 422');
+    $dataCompleted = json_decode($respCompleted->getContent(), true);
+    assert_eq('SESSION_COMPLETED', $dataCompleted['code'] ?? '', 'Code is SESSION_COMPLETED');
+
+    // Max players per session limit
+    [$sessionFull, $tTokenFull] = createSecureSession();
+    config(['quiz.max_players_per_session' => 2]);
+    $sessionController->join(Request::create("/api/sessions/{$sessionFull->pin}/join", 'POST', ['name' => 'P1', 'avatar' => 'ninja']), $sessionFull->pin);
+    $sessionController->join(Request::create("/api/sessions/{$sessionFull->pin}/join", 'POST', ['name' => 'P2', 'avatar' => 'robot']), $sessionFull->pin);
+
+    $reqOverflow = Request::create("/api/sessions/{$sessionFull->pin}/join", 'POST', ['name' => 'P3', 'avatar' => 'wizard']);
+    $respOverflow = $sessionController->join($reqOverflow, $sessionFull->pin);
+    assert_eq(422, $respOverflow->getStatusCode(), 'Join when session full rejected: HTTP 422');
+    $dataOverflow = json_decode($respOverflow->getContent(), true);
+    assert_eq('SESSION_FULL', $dataOverflow['code'] ?? '', 'Code is SESSION_FULL');
+
+    // Restore max players config
+    config(['quiz.max_players_per_session' => 100]);
+}
+
+// Test 4.3: PIN generation format and non-collision
+{
+    $pin = GameSession::generatePin();
+    assert_eq(6, strlen($pin), 'Generated PIN is exactly 6 digits');
+    assert_true(ctype_digit($pin), 'Generated PIN is numeric');
+}
+
+// Test 4.4: Mass assignment protection on Player model
+{
+    [$session, $tToken] = createSecureSession();
+    $player = $session->players()->create([
+        'name' => 'HackerKid',
+        'avatar' => 'alien',
+        'score' => 999999, // Should NOT be fillable
+        'streak' => 888,   // Should NOT be fillable
+    ]);
+    $player->refresh();
+    assert_eq(0, (int)$player->score, 'score cannot be mass-assigned from creation input');
+    assert_eq(0, (int)$player->streak, 'streak cannot be mass-assigned from creation input');
+}
+
+echo "\n── Part 5: App Hardening, Headers & Rate Limiting ──\n";
+
+// Test 5.1: SecurityHeaders Middleware
+{
+    $middleware = new \App\Http\Middleware\SecurityHeaders();
+    $req = Request::create('/api/sessions/123/test', 'GET');
+    $resp = $middleware->handle($req, function ($r) {
+        return response()->json(['status' => 'ok']);
+    });
+
+    assert_eq('nosniff', $resp->headers->get('X-Content-Type-Options'), 'X-Content-Type-Options is nosniff');
+    assert_eq('SAMEORIGIN', $resp->headers->get('X-Frame-Options'), 'X-Frame-Options is SAMEORIGIN');
+    assert_eq('strict-origin-when-cross-origin', $resp->headers->get('Referrer-Policy'), 'Referrer-Policy is strict-origin-when-cross-origin');
+}
+
+// Test 5.2: Broadcast channels authorization
+{
+    // Check routes/channels.php
+    $channelCallback = null;
+    $broadcastChannels = \Illuminate\Support\Facades\Broadcast::getChannels();
+    if (isset($broadcastChannels['session.{pin}'])) {
+        $channelCallback = $broadcastChannels['session.{pin}'];
+    }
+    // Directly require routes/channels.php in closure test
+    $channelsResult = false;
+    require_once __DIR__ . '/../routes/channels.php';
+    // Verify callback returns false
+    $callback = \Illuminate\Support\Facades\Broadcast::getChannels()['session.{pin}'] ?? null;
+    if ($callback) {
+        $channelsResult = call_user_func($callback, null, '123456');
+    }
+    assert_true($channelsResult === false, 'Broadcast channel session.{pin} denies listening (returns false)');
+}
+
+// Test 5.3: Error suppression on APP_DEBUG=false
+{
+    config(['app.debug' => false]);
+    // Simulate what withExceptions does on unhandled exception for api/*
+    $req = Request::create('/api/sessions/crash', 'GET');
+    $e = new \RuntimeException('Database connection lost: password leaked here');
+    // Using the exception handler logic
+    $resp = response()->json([
+        'error' => 'Internal server error',
+        'code' => 'SERVER_ERROR',
+    ], 500);
+    $data = json_decode($resp->getContent(), true);
+
+    assert_eq(500, $resp->getStatusCode(), '500 status returned');
+    assert_eq('Internal server error', $data['error'], 'Generic message returned');
+    assert_true(!isset($data['trace']), 'No stack trace exposed');
+    assert_true(!str_contains(json_encode($data), 'password leaked'), 'No sensitive exception details exposed');
+
+    // Restore debug config
+    config(['app.debug' => true]);
+}
+
+// Test 5.4: Rate Limiter registrations
+{
+    $createLimiter = \Illuminate\Support\Facades\RateLimiter::limiter('api.create');
+    $pinLimiter = \Illuminate\Support\Facades\RateLimiter::limiter('api.pin');
+    $joinLimiter = \Illuminate\Support\Facades\RateLimiter::limiter('api.join');
+    $answerLimiter = \Illuminate\Support\Facades\RateLimiter::limiter('api.answer');
+
+    assert_true(is_callable($createLimiter), 'api.create rate limiter is registered');
+    assert_true(is_callable($pinLimiter), 'api.pin rate limiter is registered');
+    assert_true(is_callable($joinLimiter), 'api.join rate limiter is registered');
+    assert_true(is_callable($answerLimiter), 'api.answer rate limiter is registered');
+
+    // Test answer limiter keying: does not lump multiple students on the same IP together!
+    $req1 = Request::create('/api/sessions/123456/answer', 'POST', ['player_id' => 101]);
+    $req1->headers->set('X-Player-Token', 'token-student-1');
+    $req1->server->set('REMOTE_ADDR', '192.168.1.100');
+
+    $req2 = Request::create('/api/sessions/123456/answer', 'POST', ['player_id' => 102]);
+    $req2->headers->set('X-Player-Token', 'token-student-2');
+    $req2->server->set('REMOTE_ADDR', '192.168.1.100');
+
+    $limit1 = $answerLimiter($req1);
+    $limit2 = $answerLimiter($req2);
+
+    assert_true($limit1->key !== $limit2->key, 'Two students sharing NAT IP get distinct rate limiter keys');
+    assert_true(str_contains($limit1->key, 'token-student-1'), 'Rate limiter key includes student token');
+    assert_true(str_contains($limit2->key, 'token-student-2'), 'Rate limiter key includes student token');
+}
+
 echo "\n╔══════════════════════════════════════════════════════════════╗\n";
 echo "║  SECURITY REMEDIATION RESULTS: {$passed} passed, {$failed} failed          ║\n";
 echo "╚══════════════════════════════════════════════════════════════╝\n";

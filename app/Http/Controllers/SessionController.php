@@ -127,19 +127,29 @@ class SessionController extends Controller
             'mask', 'star', 'heart', 'fire',
         ];
 
-        $validated = $request->validate([
-            'name' => 'required|string',
-            'avatar' => 'required|string|in:' . implode(',', $allowedAvatars),
-            'accessory' => 'nullable|string|in:' . implode(',', $allowedAccessories),
-        ]);
-
-        $cleanName = trim(strip_tags($validated['name']));
-        if ($cleanName === '' || mb_strlen($cleanName) > 20) {
+        $rawName = $request->input('name');
+        if (!is_string($rawName) || trim($rawName) === '') {
             return response()->json([
-                'error' => 'Player name must be between 1 and 20 characters and cannot contain HTML tags',
+                'error' => 'Player name is required and cannot be empty',
                 'code' => 'NAME_INVALID',
             ], 422);
         }
+
+        // Sanitize: strip script/style tags and contents, then strip remaining HTML tags
+        $cleanName = preg_replace('#<(script|style)\b[^>]*>(.*?)</\1>#is', '', $rawName);
+        $cleanName = trim(strip_tags($cleanName));
+
+        if ($cleanName === '' || mb_strlen($cleanName) > 20) {
+            return response()->json([
+                'error' => 'Player name must be between 1 and 20 characters',
+                'code' => 'NAME_INVALID',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'avatar' => 'required|string|in:' . implode(',', $allowedAvatars),
+            'accessory' => 'nullable|string|in:' . implode(',', $allowedAccessories),
+        ]);
 
         if ($session->players()->where('name', $cleanName)->exists()) {
             return response()->json([

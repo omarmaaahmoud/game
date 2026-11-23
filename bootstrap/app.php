@@ -44,5 +44,40 @@ return Application::configure(basePath: dirname(__DIR__))
                 }
             }
         });
+    })
+    ->booted(function () {
+        if (config('database.default') === 'sqlite') {
+            try {
+                \Illuminate\Support\Facades\DB::statement('PRAGMA journal_mode = WAL;');
+                \Illuminate\Support\Facades\DB::statement('PRAGMA synchronous = NORMAL;');
+                \Illuminate\Support\Facades\DB::statement('PRAGMA busy_timeout = 5000;');
+                \Illuminate\Support\Facades\DB::statement('PRAGMA cache_size = -20000;');
+            } catch (\Throwable $e) {}
+        }
+
+        // Configure Rate Limiters
+        \Illuminate\Support\Facades\RateLimiter::for('api.create', function (\Illuminate\Http\Request $request) {
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(20)->by($request->ip());
+        });
+
+        \Illuminate\Support\Facades\RateLimiter::for('api.pin', function (\Illuminate\Http\Request $request) {
+            $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(120)->by($pin . '|' . $request->ip());
+        });
+
+        \Illuminate\Support\Facades\RateLimiter::for('api.join', function (\Illuminate\Http\Request $request) {
+            $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($pin . '|' . $request->ip());
+        });
+
+        \Illuminate\Support\Facades\RateLimiter::for('api.answer', function (\Illuminate\Http\Request $request) {
+            $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
+            $playerKey = $request->header('X-Player-Token')
+                ?? $request->input('player_token')
+                ?? $request->input('player_id')
+                ?? $request->ip();
+
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($pin . '|' . $playerKey);
+        });
     })->create();
 
