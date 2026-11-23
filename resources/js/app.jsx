@@ -1575,6 +1575,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
   const [leaderboard, setLeaderboard] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [liveRemaining, setLiveRemaining] = useState(null);
+  const [answeredCount, setAnsweredCount] = useState(0);
   const timerRef = useRef(null);
   const isMountedRef = useRef(true);
   const pollRef = useRef(poll);
@@ -1602,10 +1603,14 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     // Real-time WebSocket subscriptions
     const unsubscribe = subscribeToSession(session.pin, {
       StudentAnswered: (data) => {
-        // Teacher receives instant student answer submission
         if (data && data.answered_count !== undefined) {
+          setAnsweredCount(data.answered_count);
           refresh();
         }
+      },
+      QuestionChanged: () => {
+        setAnsweredCount(0);
+        refresh();
       },
       LeaderboardUpdated: (data) => {
         if (data?.leaderboard) {
@@ -1689,6 +1694,7 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
       const res = await teacherPost(session.pin, `/sessions/${session.pin}/next`, {
         expected_index: poll?.current_question_index,
       });
+      setAnsweredCount(0);
       if (res && res.status === 'completed') {
         setMode('leaderboard');
         return;
@@ -1750,7 +1756,6 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     setIsProcessing(true);
     sfx.play('win');
     try {
-      clearInterval(interval.current);
       await teacherPost(session.pin, `/sessions/${session.pin}/end`);
       setMode('leaderboard');
     } catch (e) {
@@ -1760,117 +1765,222 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     }
   }
 
-  if (!poll) return <div className="loading-state-box"><h2>جاري تحميل شاشة التحكم المباشر...</h2></div>;
+  async function copyPin() {
+    sfx.play('click');
+    try {
+      await navigator.clipboard.writeText(session.pin);
+      setNotice(`✅ تم نسخ كود المسابقة: ${session.pin}`);
+    } catch {
+      setNotice(`كود المسابقة: ${session.pin}`);
+    }
+  }
+
+  if (!poll) return (
+    <div className="loading-state-box">
+      <Gamepad2 size={48} className="spin-bounce" />
+      <h2>جاري تحضير شاشة التحكم المباشر...</h2>
+    </div>
+  );
 
   const isRevealed = poll.question_state === 'revealed';
+  const totalStudents = poll.player_count || leaderboard.length || 0;
 
   return (
     <main className="live-control-layout">
+      <CosmicDecorations />
+
+      {/* ── Top Bar Control Hub ── */}
       <div className="lc-top-bar">
-        <div>
-          <span className="lc-kicker"><Radio size={14} /> البث المباشر للمسابقة · PIN {session.pin}</span>
-          <h1 className="lc-title">{session.title}</h1>
+        <div className="lc-brand-group">
+          <button className="lc-home-btn" onClick={() => setMode('teacher-dashboard')} title="العودة للوحة المعلم">
+            <ArrowLeft size={18} />
+          </button>
+          <div className="lc-brand-info">
+            <div className="lc-kicker-tag">
+              <span className="live-dot-pulse" />
+              <Radio size={14} />
+              <span>البث المباشر للمعلم</span>
+            </div>
+            <h1 className="lc-title">{session.title || 'مسابقة Tecorbi Arena 🎮'}</h1>
+          </div>
         </div>
-        <div className="lc-status-tags">
-          <span className={`status-pill ${poll.status}`}>
-            <span className="online-dot" /> {poll.status === 'active' ? 'الجولة نشطة' : poll.status === 'paused' ? 'إيقاف مؤقت' : poll.status}
-          </span>
-          <span className="counter-tag">سؤال {poll.current_question_index + 1} من {poll.total_questions}</span>
+
+        <div className="lc-progress-badge">
+          <span className="lcp-label">السؤال</span>
+          <strong className="lcp-cur">{poll.current_question_index + 1}</strong>
+          <span className="lcp-slash">/</span>
+          <span className="lcp-total">{poll.total_questions}</span>
+        </div>
+
+        <div className="lc-actions-group">
+          <div className={`status-pill ${poll.status}`}>
+            <span className="online-dot" />
+            <span>{poll.status === 'active' ? 'الجولة نشطة' : poll.status === 'paused' ? 'إيقاف مؤقت' : poll.status}</span>
+          </div>
+
+          <button className="lc-pin-pill" onClick={copyPin} title="اضغط لنسخ الكود ومشاركته">
+            <span className="lpp-label">PIN</span>
+            <strong className="lpp-code">{session.pin}</strong>
+            <Copy size={13} className="lpp-icon" />
+          </button>
         </div>
       </div>
 
+      {/* ── Main Two-Column Grid ── */}
       <div className="lc-main-grid">
-        {/* Left Side: Current Question & Teacher Controls */}
+        {/* Right (Main) Column: Current Question Preview & Action Dock */}
         <div className="lc-question-side">
           {poll.current_question ? (
             <div className="card question-live-preview-card">
               <div className="qlp-topline">
-                <span className="q-badge-num">السؤال #{poll.current_question_index + 1}</span>
-                <span className={`reveal-status-indicator ${isRevealed ? 'is-revealed' : 'is-answering'}`}>
-                  {isRevealed ? '✅ الإجابة معروضة للطلاب' : '⏳ الطلاب يجيبون حالياً'}
-                </span>
-                <span className="time-badge"><Clock3 size={16} /> {liveRemaining !== null ? `${liveRemaining}s متبقية` : `${poll.current_question.time_limit} ثانية`}</span>
+                <div className="qlp-badges-left">
+                  <span className="q-badge-num">سؤال {poll.current_question_index + 1}</span>
+                  <span className={`reveal-status-indicator ${isRevealed ? 'is-revealed' : 'is-answering'}`}>
+                    {isRevealed ? '✅ الإجابة معروضة' : '⏳ جاري استقبال الإجابات'}
+                  </span>
+                  {totalStudents > 0 && !isRevealed && (
+                    <span className="qlp-answered-chip" title="الطلاب الذين أجابوا">
+                      <Users size={14} /> {answeredCount} / {totalStudents} أجابوا
+                    </span>
+                  )}
+                </div>
+
+                <div className={`time-badge ${liveRemaining !== null && liveRemaining <= 5 && !isRevealed ? 'is-urgent' : ''}`}>
+                  <Clock3 size={16} />
+                  <span>{liveRemaining !== null ? `${liveRemaining}s` : `${poll.current_question.time_limit}s`}</span>
+                </div>
               </div>
-              <h2 className="qlp-question-title">{poll.current_question.question_text}</h2>
+
+              {/* Question Text (dir="auto" so English ? appears at the end) */}
+              <h2 className="qlp-question-title" dir="auto">
+                {poll.current_question.question_text}
+              </h2>
               {poll.current_question.question_text_ar && (
-                <p className="qlp-question-arabic" dir="rtl">{poll.current_question.question_text_ar}</p>
+                <p className="qlp-question-arabic" dir="rtl">
+                  {poll.current_question.question_text_ar}
+                </p>
               )}
 
+              {/* Choices Grid (2x2) */}
               <div className="qlp-choices-grid">
                 {poll.current_question.choices.map((c, i) => {
                   const isCorrect = poll.current_question.correct_choice_id === c.id;
+                  const shape = SHAPES[i] || SHAPES[0];
                   return (
-                    <div key={c.id} className={`qlp-choice-pill tone-${SHAPES[i].color} ${isCorrect ? 'teacher-choice-correct' : ''}`}>
-                      <span className="shape-marker">{SHAPES[i].symbol}</span>
-                      <span className="choice-text-bold">{c.choice_text}</span>
-                      {c.choice_text_ar && <small className="choice-text-sub">{c.choice_text_ar}</small>}
-                      {isCorrect && <span className="correct-stamp">✓ الإجابة الصحيحة</span>}
+                    <div
+                      key={c.id}
+                      className={`qlp-choice-pill tone-${shape.color} ${isCorrect ? 'teacher-choice-correct' : ''}`}
+                    >
+                      <div className="shape-marker">{shape.symbol}</div>
+                      <div className="choice-texts-box" dir="auto">
+                        <span className="choice-text-bold">{c.choice_text}</span>
+                        {c.choice_text_ar && <small className="choice-text-sub">{c.choice_text_ar}</small>}
+                      </div>
+                      {isCorrect && (
+                        <span className="correct-stamp">
+                          <CheckCheck size={14} /> الإجابة الصحيحة
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
             </div>
           ) : (
-            <div className="card question-live-preview-card">
+            <div className="card question-live-preview-card qlp-empty-card">
+              <Trophy size={48} className="gold-color spin-bounce" />
               <h2>المسابقة انتهت أو لا يوجد سؤال نشط حالياً</h2>
             </div>
           )}
 
-          {/* Teacher Interactive Live Controls */}
+          {/* Teacher Interactive Live Control Action Dock */}
           <div className="lc-controls-panel">
-            {!isRevealed ? (
-              <button
-                className="btn-3d btn-reveal-answer"
-                onClick={revealAnswer}
-                disabled={isProcessing}
-                title="كشف الإجابة الصحيحة لجميع الطلاب الآن"
-              >
-                <Eye size={20} /> {isProcessing ? 'جاري الكشف...' : 'كشف الإجابة الصحيحة للطلاب 👁️'}
-              </button>
-            ) : (
-              <button
-                className="btn-3d btn-next"
-                onClick={nextQ}
-                disabled={isProcessing}
-                title="الانتقال للسؤال التالي"
-              >
-                <SkipForward size={20} /> {isProcessing ? 'جاري الانتقال...' : 'الانتقال للسؤال التالي ⏭️'}
-              </button>
-            )}
+            {/* Primary Action Button (Giant, Full Width) */}
+            <div className="lc-primary-action-wrap">
+              {!isRevealed ? (
+                <button
+                  className="btn-3d btn-primary-giant btn-reveal-giant"
+                  onClick={revealAnswer}
+                  disabled={isProcessing}
+                  title="كشف الإجابة الصحيحة لجميع الطلاب الآن"
+                >
+                  <Eye size={22} />
+                  <span>{isProcessing ? 'جاري الكشف...' : 'كشف الإجابة الصحيحة للطلاب 👁️'}</span>
+                </button>
+              ) : (
+                <button
+                  className="btn-3d btn-primary-giant btn-next-giant"
+                  onClick={nextQ}
+                  disabled={isProcessing}
+                  title="الانتقال للسؤال التالي"
+                >
+                  <SkipForward size={22} />
+                  <span>{isProcessing ? 'جاري الانتقال...' : 'الانتقال للسؤال التالي ⏭️'}</span>
+                </button>
+              )}
+            </div>
 
-            {poll.status === 'active' ? (
-              <button className="btn-3d btn-pause" onClick={pauseGame} disabled={isProcessing}>
-                <Pause size={18} /> إيقاف مؤقت
-              </button>
-            ) : (
-              <button className="btn-3d btn-resume" onClick={resumeGame} disabled={isProcessing}>
-                <Play size={18} fill="currentColor" /> استئناف اللعب
-              </button>
-            )}
+            {/* Secondary Controls (2-Column Balanced Row) */}
+            <div className="lc-secondary-actions-row">
+              {poll.status === 'active' ? (
+                <button className="btn-3d btn-control-secondary btn-pause" onClick={pauseGame} disabled={isProcessing}>
+                  <Pause size={18} />
+                  <span>إيقاف مؤقت ⏸️</span>
+                </button>
+              ) : (
+                <button className="btn-3d btn-control-secondary btn-resume" onClick={resumeGame} disabled={isProcessing}>
+                  <Play size={18} fill="currentColor" />
+                  <span>استئناف اللعب ▶️</span>
+                </button>
+              )}
 
-            <button className="btn-3d btn-end" onClick={endGame} disabled={isProcessing}>
-              <Square size={16} fill="currentColor" /> إنهاء وعرض الفائزين 🏆
-            </button>
+              <button className="btn-3d btn-control-secondary btn-end" onClick={endGame} disabled={isProcessing}>
+                <Square size={16} fill="currentColor" />
+                <span>إنهاء وعرض الفائزين 🏆</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Right Side: Live Ranking Board */}
+        {/* Left Column: Live Leaderboard Side Panel */}
         <div className="lc-leaderboard-side">
           <div className="card live-rankings-card">
             <div className="lrc-header">
-              <Trophy size={20} className="gold-trophy-icon" />
-              <h3>لوحة المتصدرين الحية (Live Ranking)</h3>
+              <div className="lrc-title-wrap">
+                <Trophy size={20} className="gold-trophy-icon" />
+                <h3>المتصدرون (Live Ranking)</h3>
+              </div>
+              <span className="lrc-count-chip">{leaderboard.length} متسابق</span>
             </div>
+
             <div className="lrc-list">
-              {leaderboard.length === 0 && <p className="no-players-yet">في انتظار إجابات الطلاب...</p>}
-              {leaderboard.map(p => (
-                <div key={p.id} className={`lrc-row rank-item-${p.rank}`}>
-                  <span className={`rank-disc rank-${p.rank}`}>{p.rank}</span>
-                  <span className="player-avatar-small"><AvatarDisplay avatarId={p.avatar} /></span>
-                  <span className="player-display-name">{p.name}</span>
-                  <strong className="player-live-score">{p.score.toLocaleString()} XP</strong>
+              {leaderboard.length === 0 ? (
+                <div className="lrc-empty-state">
+                  <div className="lrc-radar-dot" />
+                  <p>في انتظار إجابات الطلاب...</p>
                 </div>
-              ))}
+              ) : (
+                leaderboard.map(p => {
+                  const medalEmoji = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : null;
+                  return (
+                    <div key={p.id} className={`lrc-row rank-item-${p.rank}`}>
+                      <span className={`rank-disc rank-${p.rank}`}>
+                        {medalEmoji || p.rank}
+                      </span>
+                      <span className="player-avatar-small">
+                        <AvatarDisplay avatarId={p.avatar} />
+                      </span>
+                      <span className="player-display-name">
+                        {p.name}
+                        {p.streak > 1 && <span className="streak-mini-chip">🔥{p.streak}</span>}
+                      </span>
+                      <strong className="player-live-score" dir="ltr">
+                        {p.score.toLocaleString()} XP
+                      </strong>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
