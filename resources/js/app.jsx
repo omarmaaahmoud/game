@@ -9,7 +9,8 @@ import {
   Clock3, CheckCircle2, Star, Zap, ArrowRight, ArrowLeft, Crown, Copy,
   Sparkles, Target, Plus, X, Check, Volume2, Rocket, ShieldCheck, LogIn,
   UserPlus, CircleHelp, Radio, Medal, Flame, Award, Heart, CheckSquare,
-  Smartphone, Lock, Eye, CheckCheck, RotateCcw, Home, ChevronDown, Shield, Share2
+  Smartphone, Lock, Eye, CheckCheck, RotateCcw, Home, ChevronDown, Shield, Share2,
+  Monitor, Settings
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -1175,64 +1176,118 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
   }
 
   return (
-    <main className="teacher-dashboard-layout">
-      <div className="section-header-row">
-        <div>
-          <span className="mini-badge-title"><GraduationCap size={15} /> لوحة تحكم المعلم</span>
-          <h1 className="page-bold-title">استوديو المعلم (Teacher Studio)</h1>
-          <p className="page-muted-sub">أنشئ مسابقات جديدة، شارك الرابط مع الطلاب، وتحكم في الجولات المباشرة</p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn-3d btn-back-home" onClick={() => { sfx.play('click'); setMode('home'); }}>
-            <ArrowLeft size={16} /> وضع الطالب (Student View)
-          </button>
-          <button className="btn-3d btn-back-home" onClick={handleLogoutTeacher} title="تسجيل الخروج وإلغاء رمز الدخول">
-            <Lock size={16} /> تسجيل الخروج
-          </button>
-        </div>
-      </div>
+    <main className="teacher-dashboard-layout td-studio-shell">
+      <div className="td-dot-grid td-dot-right" aria-hidden="true" />
+      <div className="td-dot-grid td-dot-left" aria-hidden="true" />
 
-      <div className="teacher-actions-grid">
-        {/* Create Quiz Card */}
-        <div className="teacher-dash-card create-card" onClick={() => { sfx.play('click'); setMode('teacher-create'); }}>
-          <div className="tdc-icon create-icon">
-            <Plus size={36} />
+      <div className="td-hero-grid">
+        {/* Right Column (RTL Main Controls) */}
+        <div className="td-main-col">
+          <div className="td-header-block">
+            <span className="td-badge-pill">
+              <Settings size={15} />
+              <span>لوحة تحكم المعلم</span>
+            </span>
+            <h1 className="td-studio-title">استوديو المعلم (Teacher Studio)</h1>
+            <p className="td-studio-sub">
+              أنشئ مسابقات جديدة، شارك الرابط مع الطلاب، وتحكم في الجولات المباشرة
+            </p>
           </div>
-          <h3>إنشاء مسابقة جديدة</h3>
-          <p>أضف أسئلة جديدة، خيارات ملونة، وحدد وقت الإجابة لكل سؤال</p>
-          <button className="btn-3d btn-teacher">
-            <Plus size={18} /> إنشاء الآن ✏️
-          </button>
-        </div>
 
-        {/* Demo Ready Quiz Card (Only in DEV) */}
-        {import.meta.env.DEV && (
-          <div className="teacher-dash-card demo-card" onClick={launchDemoTeacher}>
-            <div className="tdc-icon demo-icon">
-              <Trophy size={36} />
-            </div>
-            <span className="pin-pill-mini">وضع التطوير المحلي</span>
-            <h3>تشغيل المسابقة التجريبية الجاهزة</h3>
-            <p>مسابقة جاهزة عن الفضاء والعلوم بكود عشوائي لإجراء تجربة فورية مع الفصل</p>
-            <button className="btn-3d btn-demo-teacher">
-              <Play size={18} fill="currentColor" /> فتح غرفة الانتظار (Lobby) 🚀
+          <div className="td-top-pills-row">
+            <button
+              type="button"
+              className="td-outline-pill"
+              onClick={() => { sfx.play('click'); setMode('home'); }}
+            >
+              <Monitor size={16} />
+              <span>وضع الطلاب (Student View)</span>
+            </button>
+            <button
+              type="button"
+              className="td-outline-pill"
+              onClick={handleLogoutTeacher}
+              title="تسجيل الخروج وإلغاء رمز الدخول"
+            >
+              <RotateCcw size={16} />
+              <span>تسجيل الخروج</span>
             </button>
           </div>
-        )}
-      </div>
 
-      {/* Mobile Link Banner for Teacher */}
-      <div className="teacher-mobile-link-banner">
-        <div className="tml-left">
-          <Smartphone size={28} className="phone-bounce-icon" />
-          <div>
-            <strong>رابط الطلاب على الهواتف والأجهزة اللوحية (Mobile Link):</strong>
-            <p>أعطِ هذا الرابط لطلابك في الفصل ليفتحوه من هواتفهم على نفس شبكة الواي فاي:</p>
-            <code className="mobile-code-chip">{getMobileUrl()}</code>
+          {/* Primary Create Quiz Hero Card */}
+          <div
+            className="td-create-hero-card"
+            onClick={() => { sfx.play('click'); setMode('teacher-create'); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { sfx.play('click'); setMode('teacher-create'); } }}
+          >
+            <div className="td-plus-squircle-wrap">
+              <div className="td-plus-squircle">
+                <Plus size={36} strokeWidth={2.5} />
+              </div>
+              <span className="td-spark-rays" aria-hidden="true">
+                <i /><i /><i />
+              </span>
+            </div>
+
+            <h3 className="td-card-title">إنشاء مسابقة جديدة</h3>
+            <p className="td-card-desc">
+              أضف أسئلة جديدة، خيارات ملونة، وحدد وقت الإجابة لكل سؤال
+            </p>
+
+            <button
+              type="button"
+              className="td-create-cta-btn"
+              onClick={(e) => { e.stopPropagation(); sfx.play('click'); setMode('teacher-create'); }}
+            >
+              <Plus size={18} strokeWidth={2.8} />
+              <span>إنشاء الآن</span>
+              <Rocket size={17} />
+            </button>
+          </div>
+
+          {/* Demo Ready Quiz Pill (Only in DEV) */}
+          {import.meta.env.DEV && (
+            <button
+              type="button"
+              className="td-dev-demo-btn"
+              onClick={launchDemoTeacher}
+            >
+              <Trophy size={16} />
+              <span>تشغيل مسابقة تجريبية فورية (وضع التطوير المحلي)</span>
+              <Play size={14} fill="currentColor" />
+            </button>
+          )}
+        </div>
+
+        {/* Left Column (3D Books & Trophy Illustration) */}
+        <div className="td-art-col">
+          <div className="td-art-stage">
+            <img
+              src="/images/teacher-books-trophy.jpg"
+              alt="كأس التفوق وكتب المسابقات التعليمية"
+              className="td-books-trophy-img"
+            />
           </div>
         </div>
-        <button className="btn-3d btn-copy-mobile" onClick={copyMobileLink}>
-          <Copy size={18} /> نسخ الرابط 📋
+      </div>
+
+      {/* Bottom Glass Mobile Link Bar */}
+      <div className="td-mobile-glass-bar">
+        <div className="td-mobile-info">
+          <Smartphone size={22} className="td-phone-icon" />
+          <div className="td-mobile-texts">
+            <strong>رابط الطلاب على الهواتف والأجهزة اللوحية (Mobile Link):</strong>
+            <p>
+              أعطِ هذا الرابط لطلابك في الفصل ليفتحوه من هواتفهم على نفس شبكة الواي فاي:{' '}
+              <code className="td-mobile-url-inline" dir="ltr">{getMobileUrl()}</code>
+            </p>
+          </div>
+        </div>
+        <button type="button" className="td-copy-outline-btn" onClick={copyMobileLink}>
+          <Copy size={16} />
+          <span>نسخ الرابط</span>
         </button>
       </div>
     </main>
