@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createRoot } from 'react-dom/client';
 import '../css/app.css';
 import { subscribeToSession } from './echo';
+import { evaluateIncomingEvent, buildStudentRestorationState } from './realtimeState';
 import TecorbiIntro from './components/TecorbiIntro';
 import {
   Gamepad2, Trophy, GraduationCap, Users, Play, Pause, SkipForward, Square,
@@ -186,6 +187,27 @@ function clearTeacherToken(pin) {
   } catch {}
 }
 
+function saveTeacherPortalToken(token) {
+  if (!token) return;
+  try {
+    sessionStorage.setItem('tecorbi_teacher_portal_token', token);
+  } catch {}
+}
+
+function getTeacherPortalToken() {
+  try {
+    return sessionStorage.getItem('tecorbi_teacher_portal_token');
+  } catch {
+    return null;
+  }
+}
+
+function clearTeacherPortalToken() {
+  try {
+    sessionStorage.removeItem('tecorbi_teacher_portal_token');
+  } catch {}
+}
+
 function savePlayerAuth(pin, player, token) {
   if (!pin || !player || !token) return;
   try {
@@ -265,8 +287,14 @@ const get = (url, customHeaders = {}) => {
 };
 
 const teacherPost = (pin, url, body = {}) => {
-  const token = getTeacherToken(pin) || ((import.meta.env.DEV && pin === '123456') ? 'tecorbi-demo-teacher-token-123456' : null);
+  const token = getTeacherToken(pin);
   const headers = token ? { 'X-Teacher-Token': token } : {};
+  return post(url, body, headers);
+};
+
+const teacherCreatePost = (url, body = {}) => {
+  const portalToken = getTeacherPortalToken();
+  const headers = portalToken ? { 'X-Teacher-Auth': portalToken } : {};
   return post(url, body, headers);
 };
 
@@ -274,7 +302,7 @@ const playerPost = (pin, url, body = {}, explicitToken = null) => {
   const auth = getPlayerAuth(pin);
   const token = explicitToken || auth?.token;
   const headers = token ? { 'X-Player-Token': token } : {};
-  return post(url, { ...body, ...(token ? { player_token: token } : {}) }, headers);
+  return post(url, body, headers);
 };
 
 const playerGet = (pin, url, explicitToken = null) => {
@@ -659,9 +687,24 @@ function App() {
   const [mode, setMode] = useState('home'); // home | student-join | student-lobby | student-play | leaderboard | teacher-auth | teacher-dashboard | teacher-create | teacher-lobby | teacher-live
   const [session, setSession] = useState(null);
   const [player, setPlayer] = useState(null);
+  const [restoredMe, setRestoredMe] = useState(null);
   const [notice, setNotice] = useState('');
   const [isTeacherUnlocked, setIsTeacherUnlocked] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
+
+  // Verify any stored teacher portal token with the server on boot (never trust sessionStorage alone)
+  useEffect(() => {
+    const portalToken = getTeacherPortalToken();
+    if (!portalToken) return;
+    get('/teacher/verify', { 'X-Teacher-Auth': portalToken })
+      .then(() => {
+        setIsTeacherUnlocked(true);
+      })
+      .catch(() => {
+        clearTeacherPortalToken();
+        setIsTeacherUnlocked(false);
+      });
+  }, []);
 
   useEffect(() => {
     if (!notice) return;
@@ -674,23 +717,28 @@ function App() {
     const savedPin = localStorage.getItem('tecorbi_last_session_pin');
     if (!savedPin) return;
     const auth = getPlayerAuth(savedPin);
-    if (!auth || !auth.token) return;
+    if (!auth || !auth.token) {
+      clearPlayerAuth(savedPin);
+      return;
+    }
 
     playerGet(savedPin, `/sessions/${savedPin}/me`, auth.token)
       .then(data => {
-        if (!data || !data.player || !data.session) return;
-        setSession(data.session);
-        setPlayer({ ...data.player, token: auth.token });
-        if (data.session.status === 'active') {
-          setMode('student-play');
-        } else if (data.session.status === 'waiting') {
-          setMode('student-lobby');
-        } else if (data.session.status === 'completed') {
-          setMode('leaderboard');
-        }
+        const restored = buildStudentRestorationState(data);
+        if (!restored) return;
+        setSession(restored.session);
+        setPlayer({ ...restored.player, token: auth.token });
+        setRestoredMe(restored);
+        setMode(restored.targetMode);
       })
-      .catch(() => {
-        localStorage.removeItem('tecorbi_last_session_pin');
+      .catch((err) => {
+        if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
+          clearPlayerAuth(savedPin);
+          setPlayer(null);
+          setSession(null);
+          setRestoredMe(null);
+          setMode('home');
+        }
       });
   }, []);
 
@@ -725,11 +773,22 @@ function App() {
     }
   };
 
-  const openTeacherPortal = () => {
+  const openTeacherPortal = async () => {
     sfx.play('click');
-    if (isTeacherUnlocked) {
+    const portalToken = getTeacherPortalToken();
+    if (!portalToken) {
+      setIsTeacherUnlocked(false);
+      setMode('teacher-auth');
+      return;
+    }
+    try {
+      await get('/teacher/verify', { 'X-Teacher-Auth': portalToken });
+      setIsTeacherUnlocked(true);
       setMode('teacher-dashboard');
-    } else {
+    } catch {
+      clearTeacherPortalToken();
+      setIsTeacherUnlocked(false);
+      setNotice('انتهت صلاحية جلسة المعلم، يرجى تسجيل الدخول مجدداً');
       setMode('teacher-auth');
     }
   };
@@ -802,13 +861,23 @@ function App() {
         {mode === 'home' && <StudentHomeEnterPin setMode={setMode} setSession={setSession} setNotice={setNotice} copyMobileLink={copyMobileLink} />}
         {mode === 'student-join' && <StudentJoin setMode={setMode} setSession={setSession} setPlayer={setPlayer} setNotice={setNotice} initialPin={session?.pin || ''} />}
         {mode === 'student-lobby' && <StudentLobby session={session} setMode={setMode} player={player} />}
-        {mode === 'student-play' && <StudentPlay session={session} player={player} setMode={setMode} setNotice={setNotice} setPlayer={setPlayer} />}
-        {mode === 'leaderboard' && <Leaderboard session={session} setMode={setMode} player={player} />}
+        {mode === 'student-play' && (
+          <StudentPlay
+            session={session}
+            player={player}
+            setMode={setMode}
+            setNotice={setNotice}
+            setPlayer={setPlayer}
+            restoredMe={restoredMe}
+            onConsumeRestore={() => setRestoredMe(null)}
+          />
+        )}
+        {mode === 'leaderboard' && <Leaderboard key={session?.pin || 'none'} session={session} setMode={setMode} player={player} />}
 
         {/* Teacher Dedicated Screens */}
         {mode === 'teacher-auth' && <TeacherAuthModal setMode={setMode} setIsTeacherUnlocked={setIsTeacherUnlocked} setNotice={setNotice} />}
-        {mode === 'teacher-dashboard' && <TeacherDashboard setMode={setMode} setSession={setSession} setNotice={setNotice} copyMobileLink={copyMobileLink} />}
-        {mode === 'teacher-create' && <TeacherCreate setMode={setMode} setSession={setSession} setNotice={setNotice} />}
+        {mode === 'teacher-dashboard' && <TeacherDashboard setMode={setMode} setSession={setSession} setNotice={setNotice} copyMobileLink={copyMobileLink} setIsTeacherUnlocked={setIsTeacherUnlocked} />}
+        {mode === 'teacher-create' && <TeacherCreate setMode={setMode} setSession={setSession} setNotice={setNotice} setIsTeacherUnlocked={setIsTeacherUnlocked} />}
         {mode === 'teacher-lobby' && <TeacherLobby session={session} setSession={setSession} setMode={setMode} setNotice={setNotice} copyMobileLink={copyMobileLink} />}
         {mode === 'teacher-live' && <TeacherLive session={session} setSession={setSession} setMode={setMode} setNotice={setNotice} />}
       </div>
@@ -844,17 +913,11 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
     setLoading(true);
     sfx.play('click');
     try {
-      let data = await get(`/sessions/${targetPin}`);
+      const data = await get(`/sessions/${targetPin}`);
       if (data.status === 'completed') {
-        if (targetPin === '123456') {
-          // Auto-reset demo session so it is always ready to replay!
-          await teacherPost(targetPin, `/sessions/${targetPin}/reset`);
-          data = await get(`/sessions/${targetPin}`);
-        } else {
-          setNotice('⚠️ هذه المسابقة انتهت بالفعل');
-          setLoading(false);
-          return;
-        }
+        setNotice('⚠️ هذه المسابقة انتهت بالفعل');
+        setLoading(false);
+        return;
       }
       setSession(data);
       setMode('student-join');
@@ -908,7 +971,7 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
             className="tpc-pin-input"
             value={pin}
             onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            placeholder="123456"
+            placeholder="000000"
             maxLength={6}
             inputMode="numeric"
             autoFocus
@@ -953,24 +1016,6 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
             </>
           )}
         </button>
-
-        {/* Interactive Quick Demo Helper Button with Sound & Auto-fill */}
-        <div className="tpc-quick-demo-row">
-          <button
-            type="button"
-            className="btn-quick-demo-pill"
-            onClick={() => {
-              sfx.play('correct');
-              setPin('123456');
-            }}
-            title="انقر لتعبئة الكود التجريبي فوراً"
-          >
-            <span className="demo-chip-icon">⚡</span>
-            <span className="demo-chip-label">تجربة سريعة:</span>
-            <span className="demo-chip-code">123456</span>
-            <span className="demo-chip-tap">اضغط للتعبئة 🎯</span>
-          </button>
-        </div>
       </div>
     </main>
   );
@@ -980,17 +1025,36 @@ function StudentHomeEnterPin({ setMode, setSession, setNotice, copyMobileLink })
 function TeacherAuthModal({ setMode, setIsTeacherUnlocked, setNotice }) {
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (passcode === '1234') {
-      sfx.play('win');
-      setIsTeacherUnlocked(true);
-      setMode('teacher-dashboard');
-      setNotice('👋 أهلاً بك يا معلّم في لوحة التحكم!');
-    } else {
+    if (!passcode.trim() || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      const data = await post('/teacher/auth', { access_key: passcode });
+      if (data?.authenticated && data?.teacher_portal_token) {
+        saveTeacherPortalToken(data.teacher_portal_token);
+        sfx.play('win');
+        setIsTeacherUnlocked(true);
+        setMode('teacher-dashboard');
+        setNotice('👋 أهلاً بك يا معلّم في لوحة التحكم!');
+      } else {
+        sfx.play('wrong');
+        setError('تعذر التحقق من رمز الدخول');
+      }
+    } catch (err) {
       sfx.play('wrong');
-      setError(import.meta.env.DEV ? 'رمز المرور غير صحيح (الرمز الافتراضي للتطوير: 1234)' : 'رمز المرور غير صحيح');
+      if (err?.status === 503) {
+        setError('بوابة المعلم غير مفعّلة على الخادم (يرجى ضبط TEACHER_ACCESS_KEY)');
+      } else if (err?.status === 429) {
+        setError('تم تجاوز عدد محاولات الدخول المسموح بها، حاول لاحقاً');
+      } else {
+        setError('رمز المرور غير صحيح');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1005,19 +1069,20 @@ function TeacherAuthModal({ setMode, setIsTeacherUnlocked, setNotice }) {
 
         <form onSubmit={handleLogin}>
           <div className="field-block">
-            <label>{import.meta.env.DEV ? 'رمز دخول المعلم (الافتراضي: 1234)' : 'رمز دخول المعلم'}</label>
+            <label>رمز دخول المعلم</label>
             <input
               type="password"
               value={passcode}
               onChange={e => { setPasscode(e.target.value); setError(''); }}
-              placeholder={import.meta.env.DEV ? '1234' : '••••'}
+              placeholder="••••"
+              autoComplete="current-password"
               autoFocus
             />
             {error && <small className="auth-error-msg">{error}</small>}
           </div>
 
-          <button type="submit" className="btn-3d btn-primary-giant" style={{ marginTop: '16px' }}>
-            <GraduationCap size={20} /> فتح استوديو المعلم 🚀
+          <button type="submit" className="btn-3d btn-primary-giant" style={{ marginTop: '16px' }} disabled={loading || !passcode.trim()}>
+            <GraduationCap size={20} /> {loading ? 'جاري التحقق...' : 'فتح استوديو المعلم 🚀'}
           </button>
         </form>
 
@@ -1030,85 +1095,83 @@ function TeacherAuthModal({ setMode, setIsTeacherUnlocked, setNotice }) {
 }
 
 /* ══════════════════════ TEACHER: DASHBOARD ══════════════════════ */
-function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
+function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setIsTeacherUnlocked }) {
   async function launchDemoTeacher() {
     sfx.play('click');
     try {
-      let data;
-      const demoToken = getTeacherToken('123456') || (import.meta.env.DEV ? 'tecorbi-demo-teacher-token-123456' : null);
-      if (demoToken) {
-        saveTeacherToken('123456', demoToken);
-      }
-      try {
-        data = await get('/sessions/123456');
-        if (data.status === 'completed') {
-          await teacherPost('123456', '/sessions/123456/reset');
-          data = await get('/sessions/123456');
-        }
-      } catch {
-        // If 123456 doesn't exist on server, create a ready demo quiz dynamically
-        const created = await post('/sessions', {
-          title: 'تحدي أذكياء المستقبل 🌟',
-          teacher_name: 'الأستاذ أحمد',
-          questions: [
-            {
-              question_text: 'How many planets are in our solar system?',
-              question_text_ar: 'كم عدد الكواكب في مجموعتنا الشمسية؟',
-              time_limit: 20,
-              choices: [
-                { choice_text: '7 planets', choice_text_ar: '٧ كواكب', is_correct: false },
-                { choice_text: '8 planets', choice_text_ar: '٨ كواكب', is_correct: true },
-                { choice_text: '9 planets', choice_text_ar: '٩ كواكب', is_correct: false },
-                { choice_text: '10 planets', choice_text_ar: '١٠ كواكب', is_correct: false },
-              ],
-            },
-            {
-              question_text: 'What is 8 multiplied by 7?',
-              question_text_ar: 'ما حاصل ضرب ٨ × ٧؟',
-              time_limit: 15,
-              choices: [
-                { choice_text: '54', choice_text_ar: '٥٤', is_correct: false },
-                { choice_text: '56', choice_text_ar: '٥٦', is_correct: true },
-                { choice_text: '48', choice_text_ar: '٤٨', is_correct: false },
-                { choice_text: '64', choice_text_ar: '٦٤', is_correct: false },
-              ],
-            },
-            {
-              question_text: 'Which organ pumps blood through the human body?',
-              question_text_ar: 'ما العضو الذي يضخ الدم في جسم الإنسان؟',
-              time_limit: 20,
-              choices: [
-                { choice_text: 'The Lungs', choice_text_ar: 'الرئتان', is_correct: false },
-                { choice_text: 'The Brain', choice_text_ar: 'المخ', is_correct: false },
-                { choice_text: 'The Heart', choice_text_ar: 'القلب', is_correct: true },
-                { choice_text: 'The Stomach', choice_text_ar: 'المعدة', is_correct: false },
-              ],
-            },
-          ],
-        });
-        data = created;
-        if (created?.teacher_token && created?.pin) {
-          saveTeacherToken(created.pin, created.teacher_token);
-        }
-      }
-      const sessionObj = data?.session || data?.data?.session || data?.data || data;
-      const pin = String(data?.pin || data?.session?.pin || sessionObj?.pin || '');
-      if (!pin) {
-        setNotice('تعذر تحديد كود المسابقة');
+      const created = await teacherCreatePost('/sessions', {
+        title: 'تحدي أذكياء المستقبل 🌟',
+        teacher_name: 'الأستاذ أحمد',
+        questions: [
+          {
+            question_text: 'How many planets are in our solar system?',
+            question_text_ar: 'كم عدد الكواكب في مجموعتنا الشمسية؟',
+            time_limit: 20,
+            choices: [
+              { choice_text: '7 planets', choice_text_ar: '٧ كواكب', is_correct: false },
+              { choice_text: '8 planets', choice_text_ar: '٨ كواكب', is_correct: true },
+              { choice_text: '9 planets', choice_text_ar: '٩ كواكب', is_correct: false },
+              { choice_text: '10 planets', choice_text_ar: '١٠ كواكب', is_correct: false },
+            ],
+          },
+          {
+            question_text: 'What is 8 multiplied by 7?',
+            question_text_ar: 'ما حاصل ضرب ٨ × ٧؟',
+            time_limit: 15,
+            choices: [
+              { choice_text: '54', choice_text_ar: '٥٤', is_correct: false },
+              { choice_text: '56', choice_text_ar: '٥٦', is_correct: true },
+              { choice_text: '48', choice_text_ar: '٤٨', is_correct: false },
+              { choice_text: '64', choice_text_ar: '٦٤', is_correct: false },
+            ],
+          },
+          {
+            question_text: 'Which organ pumps blood through the human body?',
+            question_text_ar: 'ما العضو الذي يضخ الدم في جسم الإنسان؟',
+            time_limit: 20,
+            choices: [
+              { choice_text: 'The Lungs', choice_text_ar: 'الرئتان', is_correct: false },
+              { choice_text: 'The Brain', choice_text_ar: 'المخ', is_correct: false },
+              { choice_text: 'The Heart', choice_text_ar: 'القلب', is_correct: true },
+              { choice_text: 'The Stomach', choice_text_ar: 'المعدة', is_correct: false },
+            ],
+          },
+        ],
+      });
+      const sessionObj = created?.session || created?.data?.session || created?.data || created;
+      const pin = String(created?.pin || created?.session?.pin || sessionObj?.pin || '');
+      if (!pin || !created?.teacher_token) {
+        setNotice('تعذر إنشاء الجلسة التجريبية');
         return;
       }
-      const activeTeacherToken = data?.teacher_token || getTeacherToken(pin) || demoToken;
-      if (activeTeacherToken) {
-        saveTeacherToken(pin, activeTeacherToken);
-      }
-      setSession({ ...sessionObj, pin, teacher_token: activeTeacherToken });
+      saveTeacherToken(pin, created.teacher_token);
+      setSession({ ...sessionObj, pin, teacher_token: created.teacher_token });
       setMode('teacher-lobby');
       sfx.play('join');
-      setNotice('🚀 تم فتح لوحة تحكم المعلم للمسابقة التجريبية جاهزة للاستخدام!');
+      setNotice(`🚀 تم إنشاء جلسة تجريبية جديدة بكود: ${pin}`);
     } catch (e) {
-      console.error('Launch demo error:', e);
-      setNotice('تعذر تحميل السيشن التجريبي');
+      if (e?.status === 401 || e?.status === 403) {
+        clearTeacherPortalToken();
+        setIsTeacherUnlocked?.(false);
+        setNotice('يرجى تسجيل الدخول لبوابة المعلم أولاً');
+        setMode('teacher-auth');
+        return;
+      }
+      setNotice('تعذر إنشاء الجلسة التجريبية');
     }
+  }
+
+  async function handleLogoutTeacher() {
+    sfx.play('click');
+    const portalToken = getTeacherPortalToken();
+    if (portalToken) {
+      try {
+        await post('/teacher/logout', {}, { 'X-Teacher-Auth': portalToken });
+      } catch {}
+    }
+    clearTeacherPortalToken();
+    setIsTeacherUnlocked?.(false);
+    setMode('home');
   }
 
   return (
@@ -1119,9 +1182,14 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
           <h1 className="page-bold-title">استوديو المعلم (Teacher Studio)</h1>
           <p className="page-muted-sub">أنشئ مسابقات جديدة، شارك الرابط مع الطلاب، وتحكم في الجولات المباشرة</p>
         </div>
-        <button className="btn-3d btn-back-home" onClick={() => { sfx.play('click'); setMode('home'); }}>
-          <ArrowLeft size={16} /> وضع الطالب (Student View)
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button className="btn-3d btn-back-home" onClick={() => { sfx.play('click'); setMode('home'); }}>
+            <ArrowLeft size={16} /> وضع الطالب (Student View)
+          </button>
+          <button className="btn-3d btn-back-home" onClick={handleLogoutTeacher} title="تسجيل الخروج وإلغاء رمز الدخول">
+            <Lock size={16} /> تسجيل الخروج
+          </button>
+        </div>
       </div>
 
       <div className="teacher-actions-grid">
@@ -1143,9 +1211,9 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
             <div className="tdc-icon demo-icon">
               <Trophy size={36} />
             </div>
-            <span className="pin-pill-mini">كود: 123456</span>
+            <span className="pin-pill-mini">وضع التطوير المحلي</span>
             <h3>تشغيل المسابقة التجريبية الجاهزة</h3>
-            <p>مسابقة جاهزة عن الفضاء والعلوم لإجراء تجربة فورية مع الفصل</p>
+            <p>مسابقة جاهزة عن الفضاء والعلوم بكود عشوائي لإجراء تجربة فورية مع الفصل</p>
             <button className="btn-3d btn-demo-teacher">
               <Play size={18} fill="currentColor" /> فتح غرفة الانتظار (Lobby) 🚀
             </button>
@@ -1172,7 +1240,7 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
 }
 
 /* ══════════════════════ TEACHER: CREATE ══════════════════════ */
-function TeacherCreate({ setMode, setSession, setNotice }) {
+function TeacherCreate({ setMode, setSession, setNotice, setIsTeacherUnlocked }) {
   const [title, setTitle] = useState('');
   const [teacherName, setTeacherName] = useState('');
   const [questions, setQuestions] = useState([emptyQuestion()]);
@@ -1264,7 +1332,7 @@ function TeacherCreate({ setMode, setSession, setNotice }) {
     setLoading(true);
     sfx.play('click');
     try {
-      const data = await post('/sessions', {
+      const data = await teacherCreatePost('/sessions', {
         title: title.trim(), teacher_name: teacherName.trim(),
         questions: questions.map(q => ({
           ...q,
@@ -1291,7 +1359,14 @@ function TeacherCreate({ setMode, setSession, setNotice }) {
       sfx.play('join');
       setNotice(`🎉 تم إنشاء المسابقة بنجاح! كود الـ PIN: ${sessionPin}`);
     } catch (e) {
-      console.error('Create session error:', e);
+      if (e?.status === 401 || e?.status === 403) {
+        clearTeacherPortalToken();
+        setIsTeacherUnlocked?.(false);
+        setNotice('انتهت جلسة المعلم، يرجى تسجيل الدخول مجدداً');
+        setMode('teacher-auth');
+        setLoading(false);
+        return;
+      }
       setNotice('حدث خطأ أثناء إنشاء المسابقة');
     }
     setLoading(false);
@@ -1389,11 +1464,17 @@ function TeacherCreate({ setMode, setSession, setNotice }) {
 function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink }) {
   const [players, setPlayers] = useState([]);
   const prevCount = useRef(0);
-  const interval = useRef(null);
+  const pollTimerRef = useRef(null);
+  const inFlightRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const activePinRef = useRef(session?.pin);
+  activePinRef.current = session?.pin;
 
-  const poll = useCallback(async () => {
+  const poll = useCallback(async (targetPin = activePinRef.current) => {
+    if (!targetPin || !isMountedRef.current) return;
     try {
-      const data = await get(`/sessions/${session.pin}/players`);
+      const data = await get(`/sessions/${targetPin}/players`);
+      if (!isMountedRef.current || activePinRef.current !== targetPin) return;
       const newPlayers = data.players || [];
       if (newPlayers.length > prevCount.current) {
         sfx.play('join');
@@ -1401,36 +1482,47 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
       prevCount.current = newPlayers.length;
       setPlayers(newPlayers);
     } catch {}
-  }, [session]);
+  }, []);
 
   useEffect(() => {
-    let isMounted = true;
-    let timer = null;
+    isMountedRef.current = true;
+    const pin = session?.pin;
+    if (!pin) return;
 
-    const schedulePoll = () => {
-      if (!isMounted) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(async () => {
-        if (!isMounted) return;
-        if (!document.hidden) {
-          await poll();
-        }
-        schedulePoll();
-      }, 1000); // 1000ms in lobby
+    const schedulePoll = (delay = 1000) => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      if (!isMountedRef.current || activePinRef.current !== pin) return;
+      pollTimerRef.current = setTimeout(runPoll, delay);
     };
 
-    poll().then(schedulePoll);
+    const runPoll = async () => {
+      if (!isMountedRef.current || activePinRef.current !== pin || inFlightRef.current) return;
+      inFlightRef.current = true;
+      try {
+        if (!document.hidden) {
+          await poll(pin);
+        }
+      } finally {
+        inFlightRef.current = false;
+        if (isMountedRef.current && activePinRef.current === pin) {
+          schedulePoll(1000);
+        }
+      }
+    };
+
+    runPoll();
 
     const onVisibilityChange = () => {
-      if (!document.hidden && isMounted) {
-        poll();
+      if (!document.hidden && isMountedRef.current && activePinRef.current === pin) {
+        schedulePoll(0);
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     // Real-time WebSocket listener for instant student joining
-    const unsubscribe = subscribeToSession(session.pin, {
+    const unsubscribe = subscribeToSession(pin, {
       PlayerJoined: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
         if (data?.player) {
           setPlayers(prev => {
             if (prev.some(p => p.id === data.player.id)) return prev;
@@ -1439,15 +1531,19 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
           });
         }
       },
-    }, poll);
+    }, () => {
+      if (isMountedRef.current && activePinRef.current === pin) {
+        schedulePoll(0);
+      }
+    });
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
       document.removeEventListener('visibilitychange', onVisibilityChange);
       unsubscribe();
-      if (timer) clearTimeout(timer);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [session, poll]);
+  }, [session?.pin, poll]);
 
   async function startGame() {
     sfx.play('win');
@@ -1620,14 +1716,24 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
   const [liveRemaining, setLiveRemaining] = useState(null);
   const [answeredCount, setAnsweredCount] = useState(0);
   const timerRef = useRef(null);
+  const inFlightRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
   const isMountedRef = useRef(true);
+  const activePinRef = useRef(session?.pin);
+  activePinRef.current = session?.pin;
   const pollRef = useRef(poll);
   pollRef.current = poll;
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (targetPin = activePinRef.current) => {
+    if (!targetPin || !isMountedRef.current) return;
+    if (inFlightRef.current) {
+      pendingRefreshRef.current = true;
+      return;
+    }
+    inFlightRef.current = true;
     try {
-      const p = await get(`/sessions/${session.pin}/poll`);
-      if (!isMountedRef.current) return;
+      const p = await get(`/sessions/${targetPin}/poll`);
+      if (!isMountedRef.current || activePinRef.current !== targetPin) return;
       setPoll(p);
       if (p.leaderboard) {
         setLeaderboard(p.leaderboard);
@@ -1636,73 +1742,92 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
         if (timerRef.current) clearTimeout(timerRef.current);
         setMode('leaderboard');
       }
-    } catch {}
-  }, [session, setMode]);
+    } catch {} finally {
+      inFlightRef.current = false;
+      if (pendingRefreshRef.current && isMountedRef.current && activePinRef.current === targetPin) {
+        pendingRefreshRef.current = false;
+        refresh(targetPin);
+      }
+    }
+  }, [setMode]);
 
   useEffect(() => {
     isMountedRef.current = true;
-    refresh();
+    const pin = session?.pin;
+    if (!pin) return;
+
+    const scheduleNextPoll = () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (!isMountedRef.current || activePinRef.current !== pin) return;
+      const currentPoll = pollRef.current;
+      if (currentPoll?.status === 'completed') return;
+      const isActive = currentPoll?.status === 'active' && currentPoll?.question_state === 'answering';
+      const delay = isActive ? 2000 : 1000;
+
+      timerRef.current = setTimeout(async () => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
+        try {
+          if (!document.hidden) {
+            await refresh(pin);
+          }
+        } finally {
+          if (isMountedRef.current && activePinRef.current === pin && pollRef.current?.status !== 'completed') {
+            scheduleNextPoll();
+          }
+        }
+      }, delay);
+    };
+
+    refresh(pin).then(scheduleNextPoll);
 
     // Real-time WebSocket subscriptions
-    const unsubscribe = subscribeToSession(session.pin, {
+    const unsubscribe = subscribeToSession(pin, {
       StudentAnswered: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
         if (data && data.answered_count !== undefined) {
           setAnsweredCount(data.answered_count);
-          refresh();
+          refresh(pin);
         }
       },
       QuestionChanged: () => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
         setAnsweredCount(0);
-        refresh();
+        refresh(pin);
       },
       LeaderboardUpdated: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
         if (data?.leaderboard) {
           setLeaderboard(data.leaderboard);
         }
       },
       SessionPaused: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
         if (data?.question_paused_remaining_ms !== undefined) {
           setLiveRemaining(Math.ceil(data.question_paused_remaining_ms / 1000));
         }
-        refresh();
+        refresh(pin);
       },
       SessionResumed: () => {
-        refresh();
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
+        refresh(pin);
       },
-      GameFinished: () => {
+      GameFinished: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
+        if (data?.pin && String(data.pin) !== String(pin)) return;
+        const incomingV = Number(data?.state_version || 0);
+        const currentV = Number(pollRef.current?.state_version || 0);
+        if (incomingV > 0 && currentV > 0 && incomingV < currentV) return;
         setMode('leaderboard');
       },
-    }, refresh);
-
-    // Adaptive polling: 2000ms during active question, 1000ms between questions/revealed
-    let isPolling = false;
-    const scheduleNextPoll = () => {
-      if (!isMountedRef.current) return;
-      const currentPoll = pollRef.current;
-      const isActive = currentPoll?.status === 'active' && currentPoll?.question_state === 'answering';
-      const delay = isActive ? 2000 : 1000;
-
-      timerRef.current = setTimeout(async () => {
-        if (isMountedRef.current && !isPolling) {
-          isPolling = true;
-          try {
-            if (!document.hidden) {
-              await refresh();
-            }
-          } finally {
-            isPolling = false;
-            scheduleNextPoll();
-          }
-        } else {
-          scheduleNextPoll();
-        }
-      }, delay);
-    };
-    scheduleNextPoll();
+    }, () => {
+      if (isMountedRef.current && activePinRef.current === pin) {
+        refresh(pin);
+      }
+    });
 
     const onVisibility = () => {
-      if (!document.hidden && isMountedRef.current) {
-        refresh();
+      if (!document.hidden && isMountedRef.current && activePinRef.current === pin) {
+        refresh(pin);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -1736,12 +1861,13 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
 
     return () => {
       isMountedRef.current = false;
+      pendingRefreshRef.current = false;
       document.removeEventListener('visibilitychange', onVisibility);
       clearInterval(clockInterval);
       unsubscribe();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [session, refresh, setMode]);
+  }, [session?.pin, refresh, setMode]);
 
   async function nextQ() {
     if (isProcessing) return;
@@ -2179,11 +2305,15 @@ function StudentLobby({ session, setMode, player }) {
   const prevCount = useRef(0);
   const inFlightRef = useRef(false);
   const pollTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const activePinRef = useRef(session?.pin);
+  activePinRef.current = session?.pin;
 
-  const pollPlayers = useCallback(async () => {
-    if (!session?.pin) return;
+  const pollPlayers = useCallback(async (targetPin = activePinRef.current) => {
+    if (!targetPin || !isMountedRef.current) return;
     try {
-      const data = await get(`/sessions/${session.pin}/players`);
+      const data = await get(`/sessions/${targetPin}/players`);
+      if (!isMountedRef.current || activePinRef.current !== targetPin) return;
       const newPlayers = data.players || [];
       if (newPlayers.length > prevCount.current && prevCount.current > 0) {
         sfx.play('join');
@@ -2191,34 +2321,45 @@ function StudentLobby({ session, setMode, player }) {
       prevCount.current = newPlayers.length;
       setPlayers(newPlayers);
     } catch {}
-  }, [session?.pin]);
+  }, []);
 
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
+    const pin = session?.pin;
+    if (!pin) return;
+    let stopped = false;
 
     const schedule = (delay = 1000) => {
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-      if (!isMounted) return;
+      if (!isMountedRef.current || stopped || activePinRef.current !== pin) return;
       pollTimerRef.current = setTimeout(runPoll, delay);
     };
 
     const runPoll = async () => {
-      if (!isMounted || inFlightRef.current) return;
+      if (!isMountedRef.current || stopped || inFlightRef.current || activePinRef.current !== pin) return;
       inFlightRef.current = true;
       try {
         const [stateData] = await Promise.all([
-          get(`/sessions/${session.pin}/state`),
-          pollPlayers()
+          get(`/sessions/${pin}/state`),
+          pollPlayers(pin),
         ]);
-        if (!isMounted) return;
-        if (stateData && stateData.status === 'active') {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
+        if (stateData && (stateData.status === 'active' || stateData.status === 'paused')) {
+          stopped = true;
+          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
           sfx.play('win');
           setMode('student-play');
           return;
         }
+        if (stateData && stateData.status === 'completed') {
+          stopped = true;
+          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+          setMode('leaderboard');
+          return;
+        }
       } catch {} finally {
         inFlightRef.current = false;
-        if (isMounted) {
+        if (isMountedRef.current && !stopped && activePinRef.current === pin) {
           schedule(1000);
         }
       }
@@ -2227,19 +2368,23 @@ function StudentLobby({ session, setMode, player }) {
     runPoll();
 
     const onVisibility = () => {
-      if (!document.hidden && isMounted && !inFlightRef.current) {
+      if (!document.hidden && isMountedRef.current && !stopped && !inFlightRef.current) {
         schedule(0);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
     // Instant WebSocket triggers
-    const unsubscribe = subscribeToSession(session.pin, {
+    const unsubscribe = subscribeToSession(pin, {
       GameStarted: () => {
+        if (!isMountedRef.current || stopped || activePinRef.current !== pin) return;
+        stopped = true;
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
         sfx.play('win');
         setMode('student-play');
       },
       PlayerJoined: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
         if (data?.player) {
           setPlayers(prev => {
             if (prev.some(p => p.id === data.player.id)) return prev;
@@ -2249,16 +2394,17 @@ function StudentLobby({ session, setMode, player }) {
         }
       },
     }, () => {
-      if (isMounted && !inFlightRef.current) schedule(0);
+      if (isMountedRef.current && !stopped && !inFlightRef.current) schedule(0);
     });
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
+      stopped = true;
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribe();
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [session, setMode, pollPlayers]);
+  }, [session?.pin, setMode, pollPlayers]);
 
   return (
     <main className="space-lobby-view student-waiting-arena-space">
@@ -2331,37 +2477,52 @@ function StudentLobby({ session, setMode, player }) {
 }
 
 /* ══════════════════════ STUDENT: PLAY ARENA (DELAYED REVEAL) ══════════════════════ */
-function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
-  const [question, setQuestion] = useState(null);
-  const [qNumber, setQNumber] = useState(0);
-  const [totalQ, setTotalQ] = useState(0);
-  const [selected, setSelected] = useState(null);
-  const [pendingResult, setPendingResult] = useState(null);
-  const [isRevealed, setIsRevealed] = useState(false);
+function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredMe = null, onConsumeRestore = null }) {
+  const initialRestore = (restoredMe && session?.pin && String(restoredMe.session?.pin) === String(session.pin))
+    ? restoredMe
+    : null;
+
+  const [question, setQuestion] = useState(() => initialRestore?.question || null);
+  const [qNumber, setQNumber] = useState(() => initialRestore?.question ? initialRestore.qIndex + 1 : 0);
+  const [totalQ, setTotalQ] = useState(() => initialRestore?.totalQuestions || 0);
+  const [selected, setSelected] = useState(() => initialRestore?.selected ?? null);
+  const [pendingResult, setPendingResult] = useState(() => initialRestore?.pendingResult ?? null);
+  const [isRevealed, setIsRevealed] = useState(() => Boolean(initialRestore?.isRevealed));
   const [isTimeUp, setIsTimeUp] = useState(false);
-  const [timerDisplay, setTimerDisplay] = useState(20);
+  const [timerDisplay, setTimerDisplay] = useState(() => {
+    if (initialRestore?.gameStatus === 'paused' && initialRestore?.pausedRemainingMs != null) {
+      return Math.max(0, Math.ceil(initialRestore.pausedRemainingMs / 1000));
+    }
+    return initialRestore?.question?.time_limit || 20;
+  });
   const [isLeadPeriod, setIsLeadPeriod] = useState(false);
-  const [gameStatus, setGameStatus] = useState('active');
-  const [correctChoiceId, setCorrectChoiceId] = useState(null);
+  const [gameStatus, setGameStatus] = useState(() => initialRestore?.gameStatus || 'active');
+  const [correctChoiceId, setCorrectChoiceId] = useState(() => initialRestore?.correctChoiceId ?? null);
 
   // Mid-game leaderboard state
   const [showMidBoard, setShowMidBoard] = useState(false);
   const [midLeaderboard, setMidLeaderboard] = useState([]);
   const [myRank, setMyRank] = useState(null);
 
-  const lastQId = useRef(null);
-  const qIndexRef = useRef(null);
-  const questionStartedAtRef = useRef(null);
-  const timeLimitRef = useRef(20);
-  const currentVersionRef = useRef(0);
-  const lastProcessedVersionRef = useRef(0);
+  const lastQId = useRef(initialRestore?.question?.id ?? null);
+  const qIndexRef = useRef(initialRestore?.question ? initialRestore.qIndex : null);
+  const questionStartedAtRef = useRef(initialRestore?.questionStartedAt ?? null);
+  const pausedRemainingMsRef = useRef(initialRestore?.pausedRemainingMs ?? null);
+  const timeLimitRef = useRef(initialRestore?.question?.time_limit || 20);
+  const currentVersionRef = useRef(initialRestore?.stateVersion || 0);
+  const lastProcessedVersionRef = useRef(initialRestore?.stateVersion || 0);
+  const recoveryInFlightRef = useRef(false);
+  const lastRecoveryVersionRef = useRef(0);
+  const pollInFlightRef = useRef(false);
+  const pollTimerRef = useRef(null);
+  const isMountedRef = useRef(true);
   const preDeadlinePolledRef = useRef(false);
   const lastSoundTickRef = useRef(null);
 
   const playedSound = useRef(false);
   const midBoardTimer = useRef(null);
   const myResultRetryTimer = useRef(null);
-  const pendingResultRef = useRef(null);
+  const pendingResultRef = useRef(initialRestore?.pendingResult ?? null);
   const submittingRef = useRef(false);
   const pendingPromiseRef = useRef(null);
   const isRevealedRef = useRef(isRevealed);
@@ -2376,11 +2537,23 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   playerRef.current = player;
   const gameStatusRef = useRef(gameStatus);
   gameStatusRef.current = gameStatus;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (midBoardTimer.current) clearTimeout(midBoardTimer.current);
+      if (myResultRetryTimer.current) clearTimeout(myResultRetryTimer.current);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
+  }, []);
 
   const applyResultSoundAndScore = useCallback((res) => {
-    if (!res) return;
+    if (!res || !isMountedRef.current) return;
     if (res.total_score !== undefined) {
-      setPlayer(p => ({ ...p, score: res.total_score, streak: res.streak ?? p?.streak ?? 0 }));
+      setPlayer(p => (p ? { ...p, score: res.total_score, streak: res.streak ?? p?.streak ?? 0 } : p));
     }
     if (!playedSound.current) {
       playedSound.current = true;
@@ -2392,12 +2565,104 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     }
   }, [setPlayer]);
 
-  const handleNewQuestion = useCallback((qData, qIdx, totalCount, startedAt = null, version = 0) => {
-    if (!qData) return;
-    const numVersion = Number(version || 0);
-    if (numVersion > 0 && numVersion <= lastProcessedVersionRef.current) {
-      return; // Drop stale or duplicate state version (R2.2)
+  const fetchMyResult = useCallback(async (qId, attempt = 0) => {
+    if (myResultRetryTimer.current) clearTimeout(myResultRetryTimer.current);
+    const activePin = sessionRef.current?.pin;
+    if (!isMountedRef.current || !activePin || !qId || qId !== questionRef.current?.id) return;
+
+    const activeToken = playerRef.current?.token || getPlayerAuth(activePin)?.token;
+    try {
+      const myRes = await playerGet(activePin, `/sessions/${activePin}/my-result?question_id=${qId}`, activeToken);
+      if (!isMountedRef.current || sessionRef.current?.pin !== activePin || qId !== questionRef.current?.id) return;
+      if (myRes) {
+        if (myRes.answered && myRes.choice_id) {
+          setSelected(prev => prev ?? myRes.choice_id);
+        }
+        if (myRes.correct_choice_id) {
+          setCorrectChoiceId(myRes.correct_choice_id);
+        }
+        pendingResultRef.current = myRes;
+        setPendingResult(myRes);
+        applyResultSoundAndScore(myRes);
+        return;
+      }
+    } catch (e) {
+      if (!isMountedRef.current || sessionRef.current?.pin !== activePin) return;
+      if (e?.status === 403) {
+        clearPlayerAuth(activePin);
+        setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
+        setMode('student-join');
+        return;
+      }
+      // If 409 NOT_REVEALED, retry every 1000ms until revealed or question changes (R2.3)
+      if (e?.status === 409 && qId === questionRef.current?.id && isRevealedRef.current) {
+        myResultRetryTimer.current = setTimeout(() => {
+          fetchMyResult(qId, attempt + 1);
+        }, 1000);
+      }
     }
+  }, [applyResultSoundAndScore, setMode, setNotice]);
+
+  const triggerReveal = useCallback(async (revealedCorrectId = null, targetQuestionId = null) => {
+    if (!isMountedRef.current) return;
+    if (targetQuestionId != null && lastQId.current != null && Number(targetQuestionId) !== Number(lastQId.current)) {
+      return; // Never reveal a mismatched question
+    }
+    isRevealedRef.current = true;
+    setIsRevealed(true);
+    if (revealedCorrectId) {
+      setCorrectChoiceId(revealedCorrectId);
+    }
+    // If request is still in-flight, wait for it so we don't prematurely show 'Wrong'!
+    if (submittingRef.current && pendingPromiseRef.current) {
+      try {
+        await pendingPromiseRef.current;
+      } catch {}
+    }
+
+    if (!isMountedRef.current) return;
+
+    // If result was already received with is_correct (legacy mode), apply it
+    const res = pendingResultRef.current;
+    if (res && res.is_correct !== undefined) {
+      applyResultSoundAndScore(res);
+      return;
+    }
+
+    // Secure mode: Fetch authenticated result from /my-result with retry on 409 (R2.3)
+    const curQ = questionRef.current;
+    if (curQ?.id) {
+      fetchMyResult(curQ.id);
+    }
+
+    if (selectedRef.current === null && !playedSound.current) {
+      playedSound.current = true;
+      sfx.play('wrong');
+    }
+  }, [fetchMyResult, applyResultSoundAndScore]);
+
+  const handleNewQuestion = useCallback((qData, qIdx, totalCount, startedAt = null, version = 0, source = 'QuestionChanged') => {
+    if (!qData || !isMountedRef.current) return;
+    const numVersion = Number(version || 0);
+    const evalRes = evaluateIncomingEvent({
+      source,
+      incomingVersion: numVersion,
+      incomingQuestionId: qData.id,
+      incomingQuestionIndex: qIdx,
+      incomingStatus: 'active',
+      incomingQuestionState: 'answering',
+      current: {
+        lastProcessedVersion: lastProcessedVersionRef.current,
+        questionId: lastQId.current,
+        questionIndex: qIndexRef.current,
+        status: gameStatusRef.current,
+        isRevealed: isRevealedRef.current,
+      },
+    });
+    if (evalRes.action === 'drop_stale' || evalRes.action === 'drop_duplicate' || evalRes.action === 'drop_mismatched_question') {
+      return;
+    }
+
     if (numVersion > 0) {
       lastProcessedVersionRef.current = numVersion;
       currentVersionRef.current = numVersion;
@@ -2406,10 +2671,12 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     lastQId.current = qData.id;
     qIndexRef.current = qIdx;
     questionStartedAtRef.current = startedAt;
+    pausedRemainingMsRef.current = null;
     timeLimitRef.current = qData.time_limit || 20;
     preDeadlinePolledRef.current = false;
     lastSoundTickRef.current = null;
 
+    setGameStatus('active');
     setQuestion(qData);
     setQNumber(qIdx + 1);
     setTotalQ(totalCount);
@@ -2429,9 +2696,185 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     sfx.play('join');
   }, []);
 
+  const applyAuthoritativeSnapshot = useCallback((data, source = 'poll') => {
+    if (!isMountedRef.current || !data) return;
+
+    const versionNum = Number(data.state_version || 0);
+    const evalRes = evaluateIncomingEvent({
+      source,
+      incomingVersion: versionNum,
+      incomingQuestionId: data.current_question?.id ?? null,
+      incomingQuestionIndex: data.current_question_index ?? null,
+      incomingStatus: data.status ?? null,
+      incomingQuestionState: data.question_state ?? null,
+      current: {
+        lastProcessedVersion: lastProcessedVersionRef.current,
+        questionId: lastQId.current,
+        questionIndex: qIndexRef.current,
+        status: gameStatusRef.current,
+        isRevealed: isRevealedRef.current,
+      },
+    });
+
+    if (evalRes.action === 'drop_stale' || evalRes.action === 'drop_duplicate' || evalRes.action === 'drop_mismatched_question') {
+      return;
+    }
+
+    if (evalRes.action === 'apply_reveal_only') {
+      if (
+        data.question_state === 'revealed' &&
+        !isRevealedRef.current &&
+        data.current_question?.id != null &&
+        Number(data.current_question.id) === Number(lastQId.current)
+      ) {
+        triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
+      }
+      return;
+    }
+
+    if (data.status === 'completed') {
+      if (versionNum > 0) {
+        lastProcessedVersionRef.current = versionNum;
+        currentVersionRef.current = versionNum;
+      }
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      sfx.play('win');
+      setMode('leaderboard');
+      return;
+    }
+
+    const isNewQuestion = Boolean(
+      data.current_question &&
+      (Number(data.current_question.id) !== Number(lastQId.current) ||
+        Number(data.current_question_index) !== Number(qIndexRef.current))
+    );
+
+    if (isNewQuestion && (data.status === 'active' || data.status === 'paused' || data.status === 'waiting')) {
+      handleNewQuestion(
+        data.current_question,
+        data.current_question_index,
+        data.total_questions,
+        data.question_started_at,
+        versionNum,
+        source
+      );
+      if (data.status === 'paused') {
+        setGameStatus('paused');
+        pausedRemainingMsRef.current = data.question_paused_remaining_ms ?? null;
+        if (data.question_paused_remaining_ms != null) {
+          setTimerDisplay(Math.max(0, Math.ceil(data.question_paused_remaining_ms / 1000)));
+        }
+      }
+      if (data.question_state === 'revealed' && !isRevealedRef.current) {
+        triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
+      }
+      return;
+    }
+
+    if (versionNum > 0) {
+      lastProcessedVersionRef.current = versionNum;
+      currentVersionRef.current = versionNum;
+    }
+
+    if (data.status) {
+      setGameStatus(data.status);
+    }
+    if (data.status === 'paused') {
+      pausedRemainingMsRef.current = data.question_paused_remaining_ms ?? null;
+      if (data.question_paused_remaining_ms != null) {
+        setTimerDisplay(Math.max(0, Math.ceil(data.question_paused_remaining_ms / 1000)));
+      }
+    } else {
+      pausedRemainingMsRef.current = null;
+    }
+
+    if (data.current_question) {
+      if (data.question_started_at) {
+        questionStartedAtRef.current = data.question_started_at;
+      }
+      if (
+        data.question_state === 'revealed' &&
+        !isRevealedRef.current &&
+        Number(data.current_question.id) === Number(lastQId.current)
+      ) {
+        triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
+      }
+    }
+  }, [handleNewQuestion, setMode, triggerReveal]);
+
+  const recoverAuthoritativeState = useCallback(async (expectedPin = sessionRef.current?.pin, triggerVersion = 0) => {
+    if (!expectedPin || !isMountedRef.current || recoveryInFlightRef.current) return;
+    if (triggerVersion > 0 && triggerVersion <= lastRecoveryVersionRef.current) return;
+
+    recoveryInFlightRef.current = true;
+    if (triggerVersion > 0) {
+      lastRecoveryVersionRef.current = triggerVersion;
+    }
+
+    try {
+      const data = await get(`/sessions/${expectedPin}/state`);
+      if (!isMountedRef.current || sessionRef.current?.pin !== expectedPin) return;
+      if (data && String(data.pin) === String(expectedPin)) {
+        applyAuthoritativeSnapshot(data, 'recovery');
+      }
+    } catch {} finally {
+      recoveryInFlightRef.current = false;
+    }
+  }, [applyAuthoritativeSnapshot]);
+
+  // Apply /me restoration payload on initial mount after page refresh
+  useEffect(() => {
+    if (!restoredMe || !session?.pin || String(restoredMe.session?.pin) !== String(session.pin)) return;
+
+    const r = restoredMe;
+    if (r.stateVersion > 0) {
+      lastProcessedVersionRef.current = r.stateVersion;
+      currentVersionRef.current = r.stateVersion;
+    }
+    if (r.question) {
+      lastQId.current = r.question.id;
+      qIndexRef.current = r.qIndex;
+      timeLimitRef.current = r.question.time_limit || 20;
+      setQuestion(r.question);
+      setQNumber(r.qIndex + 1);
+      setTotalQ(r.totalQuestions);
+    }
+    questionStartedAtRef.current = r.questionStartedAt;
+    pausedRemainingMsRef.current = r.pausedRemainingMs;
+    setGameStatus(r.gameStatus || 'active');
+
+    if (r.gameStatus === 'paused' && r.pausedRemainingMs != null) {
+      setTimerDisplay(Math.max(0, Math.ceil(r.pausedRemainingMs / 1000)));
+      setIsLeadPeriod(false);
+    }
+
+    if (r.selected != null) {
+      setSelected(r.selected);
+    }
+    if (r.pendingResult) {
+      pendingResultRef.current = r.pendingResult;
+      setPendingResult(r.pendingResult);
+    }
+    if (r.isRevealed) {
+      setIsRevealed(true);
+      if (r.correctChoiceId) {
+        setCorrectChoiceId(r.correctChoiceId);
+      }
+    }
+
+    onConsumeRestore?.();
+  }, [restoredMe, session?.pin, onConsumeRestore]);
+
   // Precise Authoritative Timer Tick (~150ms redraw, never accumulates)
   useEffect(() => {
-    if (gameStatus !== 'active' || !question || isRevealed) return;
+    if (!question || isRevealed) return;
+    if (gameStatus === 'paused') {
+      if (pausedRemainingMsRef.current != null) {
+        setTimerDisplay(Math.max(0, Math.ceil(pausedRemainingMsRef.current / 1000)));
+      }
+      return;
+    }
+    if (gameStatus !== 'active') return;
 
     const updateCountdown = () => {
       const now = serverNow();
@@ -2476,24 +2919,73 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
   // Real-time WebSocket subscription for instant question changes & answer reveals
   useEffect(() => {
-    const unsubscribe = subscribeToSession(session?.pin, {
+    const pin = session?.pin;
+    if (!pin) return;
+
+    const unsubscribe = subscribeToSession(pin, {
       QuestionChanged: (data) => {
-        if (data?.question) {
-          handleNewQuestion(
-            data.question,
-            data.current_question_index ?? 0,
-            data.total_questions ?? 1,
-            data.question_started_at || null,
-            data.state_version || 0
-          );
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin || !data?.question) return;
+        const incomingVersion = Number(data.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'QuestionChanged',
+          incomingVersion,
+          incomingQuestionId: data.question.id,
+          incomingQuestionIndex: data.current_question_index ?? 0,
+          incomingStatus: 'active',
+          incomingQuestionState: 'answering',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
         }
+        if (evalRes.action !== 'apply') return;
+        handleNewQuestion(
+          data.question,
+          data.current_question_index ?? 0,
+          data.total_questions ?? 1,
+          data.question_started_at || null,
+          incomingVersion,
+          'QuestionChanged'
+        );
       },
       AnswerRevealed: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin || !data) return;
+        const incomingVersion = Number(data.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'AnswerRevealed',
+          incomingVersion,
+          incomingQuestionId: data.question_id ?? null,
+          incomingQuestionState: 'revealed',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
+        }
+        if (evalRes.action !== 'apply') return;
+        if (incomingVersion > 0) {
+          lastProcessedVersionRef.current = incomingVersion;
+          currentVersionRef.current = incomingVersion;
+        }
         if (!isRevealedRef.current) {
-          triggerReveal(data.correct_choice_id);
+          triggerReveal(data.correct_choice_id, data.question_id ?? null);
         }
       },
       LeaderboardUpdated: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
         if (data?.leaderboard) {
           setMidLeaderboard(data.leaderboard);
           const myId = playerRef.current?.id;
@@ -2501,175 +2993,230 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           setMyRank(idx >= 0 ? idx + 1 : null);
           const myP = data.leaderboard.find(p => p.id === myId);
           if (myP && myP.score !== undefined) {
-            setPlayer(p => ({ ...p, score: myP.score }));
+            setPlayer(p => (p ? { ...p, score: myP.score } : p));
           }
         }
       },
-      SessionPaused: () => {
+      SessionPaused: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
+        const incomingVersion = Number(data?.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'SessionPaused',
+          incomingVersion,
+          incomingStatus: 'paused',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
+        }
+        if (evalRes.action !== 'apply') return;
+        if (incomingVersion > 0) {
+          lastProcessedVersionRef.current = incomingVersion;
+          currentVersionRef.current = incomingVersion;
+        }
+        if (data?.question_paused_remaining_ms != null) {
+          pausedRemainingMsRef.current = data.question_paused_remaining_ms;
+          setTimerDisplay(Math.max(0, Math.ceil(data.question_paused_remaining_ms / 1000)));
+        }
         setGameStatus('paused');
       },
       SessionResumed: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
+        const incomingVersion = Number(data?.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'SessionResumed',
+          incomingVersion,
+          incomingStatus: 'active',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
+        }
+        if (evalRes.action !== 'apply') return;
+        if (incomingVersion > 0) {
+          lastProcessedVersionRef.current = incomingVersion;
+          currentVersionRef.current = incomingVersion;
+        }
+        pausedRemainingMsRef.current = null;
         setGameStatus('active');
         if (data?.question_started_at) {
           questionStartedAtRef.current = data.question_started_at;
         }
       },
-      GameFinished: () => {
+      GameFinished: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
+        if (data?.pin && String(data.pin) !== String(pin)) return;
+        const incomingVersion = Number(data?.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'GameFinished',
+          incomingVersion,
+          incomingQuestionId: data?.question_id ?? null,
+          incomingStatus: 'completed',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
+        }
+        if (evalRes.action !== 'apply') return;
+        if (incomingVersion > 0) {
+          lastProcessedVersionRef.current = incomingVersion;
+          currentVersionRef.current = incomingVersion;
+        }
         sfx.play('win');
         setMode('leaderboard');
       },
-      SessionReset: () => {
+      SessionReset: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
+        if (data?.pin && String(data.pin) !== String(pin)) return;
+        const incomingVersion = Number(data?.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'SessionReset',
+          incomingVersion,
+          incomingStatus: 'waiting',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
+        }
+        if (evalRes.action !== 'apply') return;
+        if (incomingVersion > 0) {
+          lastProcessedVersionRef.current = incomingVersion;
+          currentVersionRef.current = incomingVersion;
+        }
+        clearPlayerAuth(pin);
         setMode('home');
       },
     }, () => {
-      // One-time sync on reconnect
-      if (!session?.pin) return;
-      get(`/sessions/${session.pin}/state`).then(data => {
-        if (data.status === 'completed') {
-          setMode('leaderboard');
-        } else if (data.current_question) {
-          if (data.current_question.id !== lastQId.current || data.current_question_index !== qIndexRef.current) {
-            handleNewQuestion(
-              data.current_question,
-              data.current_question_index,
-              data.total_questions,
-              data.question_started_at,
-              data.state_version
-            );
-          }
-          if (data.question_state === 'revealed' && !isRevealedRef.current) {
-            triggerReveal(data.current_question.correct_choice_id);
-          }
-        }
-      }).catch(() => {});
+      // One-time sync on reconnect via guarded authoritative recovery
+      recoverAuthoritativeState(pin, 0);
     });
 
     return () => {
       unsubscribe();
     };
-  }, [session?.pin, setMode, setPlayer, handleNewQuestion]);
+  }, [session?.pin, setMode, setPlayer, handleNewQuestion, triggerReveal, recoverAuthoritativeState]);
 
-  // Adaptive polling: 1500ms while answering, 1000ms otherwise, sequentially scheduled without concurrency
+  // Adaptive polling: 1500ms while answering, 1000ms otherwise, strictly 1 in-flight + 1 timer per active session
   useEffect(() => {
+    const pin = session?.pin;
+    if (!pin) return;
     let isMounted = true;
-    let pollTimer = null;
+    let completed = false;
 
     const pollState = async () => {
-      if (!isMounted) return;
+      if (!isMounted || completed || sessionRef.current?.pin !== pin || pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
       try {
-        const data = await get(`/sessions/${session.pin}/state`);
-        if (!isMounted || !data) return;
+        const data = await get(`/sessions/${pin}/state`);
+        if (!isMounted || sessionRef.current?.pin !== pin || !data) return;
+        if (data.pin && String(data.pin) !== String(pin)) return;
 
         if (data.status === 'completed') {
-          sfx.play('win');
-          if (pollTimer) clearTimeout(pollTimer);
-          setMode('leaderboard');
-          return;
-        }
-        setGameStatus(data.status);
-
-        // Version guard before handling or state check (R2.2)
-        const versionNum = Number(data.state_version || 0);
-        if (versionNum > 0 && versionNum <= lastProcessedVersionRef.current) {
-          if (data.question_state === 'revealed' && !isRevealedRef.current) {
-            triggerReveal(data.current_question?.correct_choice_id);
-          }
-          return;
-        }
-
-        const isNewQuestion = data.current_question && (
-          data.current_question.id !== lastQId.current ||
-          data.current_question_index !== qIndexRef.current
-        );
-
-        if (isNewQuestion && (data.status === 'active' || data.status === 'waiting')) {
-          handleNewQuestion(
-            data.current_question,
-            data.current_question_index,
-            data.total_questions,
-            data.question_started_at,
-            data.state_version
-          );
-          return;
-        }
-
-        // Stale version check strictly for non-question state changes
-        if (data.state_version !== undefined && data.state_version < currentVersionRef.current) {
-          return;
-        }
-        if (data.state_version) {
-          currentVersionRef.current = data.state_version;
-        }
-
-        if (data.current_question) {
-          if (data.question_started_at) {
-            questionStartedAtRef.current = data.question_started_at;
-          }
-          if (data.question_state === 'revealed' && !isRevealedRef.current) {
-            triggerReveal(data.current_question.correct_choice_id);
+          const v = Number(data.state_version || 0);
+          if (v === 0 || v >= lastProcessedVersionRef.current) {
+            completed = true;
+            if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
           }
         }
-      } catch {}
+        applyAuthoritativeSnapshot(data, 'poll');
+      } catch {} finally {
+        pollInFlightRef.current = false;
+      }
     };
 
-    const scheduleNext = () => {
-      if (!isMounted) return;
-      if (pollTimer) clearTimeout(pollTimer);
+    const scheduleNext = (delayOverride = null) => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      if (!isMounted || completed || sessionRef.current?.pin !== pin) return;
 
       const startedAt = questionStartedAtRef.current;
       const limit = timeLimitRef.current || 20;
       const now = serverNow();
 
       let delay = 1000;
-      if (gameStatusRef.current === 'active' && !isRevealedRef.current && startedAt) {
+      if (delayOverride !== null) {
+        delay = delayOverride;
+      } else if (gameStatusRef.current === 'active' && !isRevealedRef.current && startedAt) {
         delay = 1500;
-        // Extra poll shortly before deadline
         const remaining = limit - (now - startedAt) / 1000;
         if (remaining > 0.8 && remaining < 2.5 && !preDeadlinePolledRef.current) {
           delay = Math.max(300, Math.round((remaining - 0.5) * 1000));
           preDeadlinePolledRef.current = true;
         }
-      } else {
-        delay = 1000;
       }
 
-      pollTimer = setTimeout(async () => {
-        if (!isMounted) return;
+      pollTimerRef.current = setTimeout(async () => {
+        if (!isMounted || completed || sessionRef.current?.pin !== pin) return;
         try {
-          if (!document.hidden) {
+          if (!document.hidden || delayOverride === 0) {
             await pollState();
           }
         } finally {
-          if (isMounted) {
+          if (isMounted && !completed && sessionRef.current?.pin === pin) {
             scheduleNext();
           }
         }
       }, delay);
     };
 
-    pollState().then(scheduleNext);
+    pollState().then(() => {
+      if (isMounted && !completed && sessionRef.current?.pin === pin) {
+        scheduleNext();
+      }
+    });
 
     const onVisibility = () => {
-      if (!document.hidden && isMounted) {
-        pollState();
+      if (!document.hidden && isMounted && !completed && !pollInFlightRef.current) {
+        scheduleNext(0);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       isMounted = false;
+      completed = true;
       document.removeEventListener('visibilitychange', onVisibility);
-      if (pollTimer) clearTimeout(pollTimer);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [session, handleNewQuestion, setMode]);
+  }, [session?.pin, applyAuthoritativeSnapshot]);
 
   // After reveal => fetch mid-game leaderboard after 3 seconds
   useEffect(() => {
-    if (!isRevealed) return;
+    const pin = session?.pin;
+    if (!isRevealed || !pin) return;
     midBoardTimer.current = setTimeout(async () => {
+      if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
       try {
-        const activeToken = playerRef.current?.token || getPlayerAuth(session?.pin)?.token;
-        const lb = await playerGet(session?.pin, `/sessions/${session?.pin}/leaderboard`, activeToken);
+        const activeToken = playerRef.current?.token || getPlayerAuth(pin)?.token;
+        const lb = await playerGet(pin, `/sessions/${pin}/leaderboard`, activeToken);
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
         const board = lb.leaderboard || [];
         setMidLeaderboard(board);
         if (lb.my_rank !== undefined && lb.my_rank !== null) {
@@ -2680,7 +3227,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           setMyRank(idx >= 0 ? idx + 1 : null);
         }
         if (lb.my_score !== undefined && lb.my_score !== null) {
-          setPlayer(p => ({ ...p, score: lb.my_score }));
+          setPlayer(p => (p ? { ...p, score: lb.my_score } : p));
         }
         setShowMidBoard(true);
         sfx.play('join');
@@ -2689,71 +3236,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     return () => { if (midBoardTimer.current) clearTimeout(midBoardTimer.current); };
   }, [isRevealed, session?.pin, setPlayer]);
 
-  const fetchMyResult = useCallback(async (qId, attempt = 0) => {
-    if (myResultRetryTimer.current) clearTimeout(myResultRetryTimer.current);
-    if (!qId || qId !== questionRef.current?.id) return;
-
-    const activeToken = playerRef.current?.token || getPlayerAuth(sessionRef.current?.pin)?.token;
-    try {
-      const myRes = await playerGet(sessionRef.current?.pin, `/sessions/${sessionRef.current?.pin}/my-result?question_id=${qId}`, activeToken);
-      if (myRes && qId === questionRef.current?.id) {
-        if (myRes.correct_choice_id) {
-          setCorrectChoiceId(myRes.correct_choice_id);
-        }
-        pendingResultRef.current = myRes;
-        setPendingResult(myRes);
-        applyResultSoundAndScore(myRes);
-        return;
-      }
-    } catch (e) {
-      if (e?.status === 403) {
-        clearPlayerAuth(sessionRef.current?.pin);
-        setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
-        setMode('student-join');
-        return;
-      }
-      // If 409 NOT_REVEALED, retry every 1000ms until revealed or question changes (R2.3)
-      if (e?.status === 409 && qId === questionRef.current?.id && isRevealedRef.current) {
-        myResultRetryTimer.current = setTimeout(() => {
-          fetchMyResult(qId, attempt + 1);
-        }, 1000);
-      }
-    }
-  }, [applyResultSoundAndScore, setMode, setNotice]);
-
-  const triggerReveal = useCallback(async (revealedCorrectId = null) => {
-    setIsRevealed(true);
-    if (revealedCorrectId) {
-      setCorrectChoiceId(revealedCorrectId);
-    }
-    // If request is still in-flight, wait for it so we don't prematurely show 'Wrong'!
-    if (submittingRef.current && pendingPromiseRef.current) {
-      try {
-        await pendingPromiseRef.current;
-      } catch {}
-    }
-
-    // If result was already received with is_correct (legacy mode), apply it
-    const res = pendingResultRef.current;
-    if (res && res.is_correct !== undefined) {
-      applyResultSoundAndScore(res);
-      return;
-    }
-
-    // Secure mode: Fetch authenticated result from /my-result with retry on 409 (R2.3)
-    const curQ = questionRef.current;
-    if (curQ?.id) {
-      fetchMyResult(curQ.id);
-    }
-
-    if (selected === null && !playedSound.current) {
-      playedSound.current = true;
-      sfx.play('wrong');
-    }
-  }, [fetchMyResult, applyResultSoundAndScore, selected]);
-
   async function submitAnswer(choiceId) {
-    if (selected !== null || isRevealed || isTimeUp || isLeadPeriod || timerDisplay <= 0) return;
+    if (gameStatus !== 'active' || selected !== null || isRevealed || isTimeUp || isLeadPeriod || timerDisplay <= 0) return;
     sfx.play('click');
     setSelected(choiceId);
     submittingRef.current = true;
@@ -2773,6 +3257,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     try {
       const data = await prom;
       submittingRef.current = false;
+      if (!isMountedRef.current) return;
       if (data && data.is_correct !== undefined) {
         // Legacy mode (QUIZ_REVEAL_ON_ANSWER=true)
         pendingResultRef.current = data;
@@ -2780,7 +3265,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         if (data.correct_choice_id) {
           setCorrectChoiceId(data.correct_choice_id);
         }
-        if (isRevealed) {
+        if (isRevealedRef.current) {
           applyResultSoundAndScore(data);
         }
       } else {
@@ -2790,6 +3275,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       }
     } catch (e) {
       submittingRef.current = false;
+      if (!isMountedRef.current) return;
       const code = e?.data?.code;
 
       if (e?.status === 403 || code === 'UNAUTHORIZED_PLAYER') {
@@ -2800,7 +3286,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       }
 
       if (e?.status === 409 && code === 'ALREADY_ANSWERED') {
-        // Already answered: keep choice selected and treat as accepted
+        // Already answered: keep choice locked and treat as accepted
         pendingResultRef.current = { accepted: true };
         setPendingResult({ accepted: true });
         return;
@@ -2849,6 +3335,10 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           <Pause size={54} className="pause-icon-big" />
           <h1>المسابقة متوقفة مؤقتاً</h1>
           <p>أوقف المعلم الجولة مؤقتاً لمراجعة الشرح... استعد للاستئناف!</p>
+          <div className="countdown-clock" style={{ marginTop: '14px' }}>
+            <Clock3 size={18} />
+            <span className="clock-number">{timerDisplay}s</span>
+          </div>
         </div>
       </main>
     );
@@ -2882,55 +3372,45 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           </p>
         </div>
 
-        {/* Top 3 Mini Podium */}
+        {/* Top 3 Mini Podium (render only real players present in authoritative leaderboard) */}
         {midLeaderboard.length >= 1 && (
           <div className="mid-podium-row">
             {/* 2nd */}
-            <div className="mid-podium-slot mid-slot-2">
-              {midLeaderboard[1] ? (
-                <>
-                  <div className="mid-pod-emoji-ring" style={{ borderColor: RANK_COLORS[1] }}>
-                    <span><AvatarDisplay avatarId={midLeaderboard[1].avatar} /></span>
-                  </div>
-                  <span className="mid-pod-rank" style={{ background: RANK_COLORS[1] }}>🥈</span>
-                  <strong className="mid-pod-name">{midLeaderboard[1].name}</strong>
-                  <span className="mid-pod-score">{midLeaderboard[1].score.toLocaleString()} XP</span>
-                </>
-              ) : (
-                <div className="mid-pod-empty">🥈</div>
-              )}
-            </div>
+            {midLeaderboard[1] && (
+              <div className="mid-podium-slot mid-slot-2">
+                <div className="mid-pod-emoji-ring" style={{ borderColor: RANK_COLORS[1] }}>
+                  <span><AvatarDisplay avatarId={midLeaderboard[1].avatar} /></span>
+                </div>
+                <span className="mid-pod-rank" style={{ background: RANK_COLORS[1] }}>🥈</span>
+                <strong className="mid-pod-name">{midLeaderboard[1].name}</strong>
+                <span className="mid-pod-score">{midLeaderboard[1].score.toLocaleString()} XP</span>
+              </div>
+            )}
 
             {/* 1st */}
-            <div className="mid-podium-slot mid-slot-1">
-              {midLeaderboard[0] && (
-                <>
-                  <span className="mid-pod-crown">👑</span>
-                  <div className="mid-pod-emoji-ring mid-ring-gold" style={{ borderColor: RANK_COLORS[0] }}>
-                    <span><AvatarDisplay avatarId={midLeaderboard[0].avatar} /></span>
-                  </div>
-                  <span className="mid-pod-rank" style={{ background: RANK_COLORS[0], color: '#1e1b4b' }}>🥇</span>
-                  <strong className="mid-pod-name mid-name-gold">{midLeaderboard[0].name}</strong>
-                  <span className="mid-pod-score mid-score-gold">{midLeaderboard[0].score.toLocaleString()} XP</span>
-                </>
-              )}
-            </div>
+            {midLeaderboard[0] && (
+              <div className="mid-podium-slot mid-slot-1">
+                <span className="mid-pod-crown">👑</span>
+                <div className="mid-pod-emoji-ring mid-ring-gold" style={{ borderColor: RANK_COLORS[0] }}>
+                  <span><AvatarDisplay avatarId={midLeaderboard[0].avatar} /></span>
+                </div>
+                <span className="mid-pod-rank" style={{ background: RANK_COLORS[0], color: '#1e1b4b' }}>🥇</span>
+                <strong className="mid-pod-name mid-name-gold">{midLeaderboard[0].name}</strong>
+                <span className="mid-pod-score mid-score-gold">{midLeaderboard[0].score.toLocaleString()} XP</span>
+              </div>
+            )}
 
             {/* 3rd */}
-            <div className="mid-podium-slot mid-slot-3">
-              {midLeaderboard[2] ? (
-                <>
-                  <div className="mid-pod-emoji-ring" style={{ borderColor: RANK_COLORS[2] }}>
-                    <span><AvatarDisplay avatarId={midLeaderboard[2].avatar} /></span>
-                  </div>
-                  <span className="mid-pod-rank" style={{ background: RANK_COLORS[2] }}>🥉</span>
-                  <strong className="mid-pod-name">{midLeaderboard[2].name}</strong>
-                  <span className="mid-pod-score">{midLeaderboard[2].score.toLocaleString()} XP</span>
-                </>
-              ) : (
-                <div className="mid-pod-empty">🥉</div>
-              )}
-            </div>
+            {midLeaderboard[2] && (
+              <div className="mid-podium-slot mid-slot-3">
+                <div className="mid-pod-emoji-ring" style={{ borderColor: RANK_COLORS[2] }}>
+                  <span><AvatarDisplay avatarId={midLeaderboard[2].avatar} /></span>
+                </div>
+                <span className="mid-pod-rank" style={{ background: RANK_COLORS[2] }}>🥉</span>
+                <strong className="mid-pod-name">{midLeaderboard[2].name}</strong>
+                <span className="mid-pod-score">{midLeaderboard[2].score.toLocaleString()} XP</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2978,6 +3458,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   }
 
   const effectiveCorrectId = correctChoiceId || pendingResult?.correct_choice_id;
+  const hasVerifiedResult = pendingResult != null && typeof pendingResult.is_correct === 'boolean';
+  const isVerifyingAnswer = isRevealed && selected !== null && !hasVerifiedResult;
 
   return (
     <main className="play-arena-container">
@@ -3017,7 +3499,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         {question.choices.map((c, i) => {
           const isSelected = selected === c.id;
           const isCorrect = isRevealed && effectiveCorrectId === c.id;
-          const isWrong = isRevealed && isSelected && !pendingResult?.is_correct;
+          const isWrong = isRevealed && isSelected && hasVerifiedResult && pendingResult.is_correct === false;
           const shape = SHAPES[i] || SHAPES[0];
 
           return (
@@ -3071,12 +3553,12 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       {/* State 2: Time up or Teacher revealed -> Show full correction */}
       {isRevealed && (
         <div className={`answer-feedback-popup ${
-          pendingResult
+          hasVerifiedResult
             ? (pendingResult.is_correct ? 'feedback-correct' : 'feedback-wrong')
             : (selected !== null ? 'feedback-verifying' : 'feedback-wrong')
         }`}>
           <div className="feedback-content">
-            {pendingResult?.is_correct ? (
+            {hasVerifiedResult && pendingResult.is_correct ? (
               <>
                 <div className="feedback-icon-bubble">🎉</div>
                 <div className="feedback-text">
@@ -3084,7 +3566,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
                   <p>كسبت <strong>+{pendingResult.points_earned}</strong> نقطة XP ⚡</p>
                 </div>
               </>
-            ) : selected !== null && !pendingResult ? (
+            ) : isVerifyingAnswer ? (
               <>
                 <div className="feedback-icon-bubble">⏳</div>
                 <div className="feedback-text">
@@ -3133,20 +3615,52 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 }
 
 /* ══════════════════════ ESPORTS HALL OF FAME LEADERBOARD ══════════════════════ */
-function Leaderboard({ session, setMode, player }) {
-  const [results, setResults] = useState(null);
-  const [fetchError, setFetchError] = useState(false);
+function Leaderboard({ session, setMode, player, initialResults = null, initialFetchError = false }) {
+  const pin = session?.pin ? String(session.pin) : null;
+  const matchesInitialPin = Boolean(
+    initialResults &&
+    pin &&
+    (!initialResults.pin || String(initialResults.pin) === pin)
+  );
+  const [resultsEntry, setResultsEntry] = useState(() => (
+    matchesInitialPin ? { pin, data: initialResults } : null
+  ));
+  const [errorEntry, setErrorEntry] = useState(() => (
+    initialFetchError ? { pin: pin || '__none__', error: true } : null
+  ));
   const [isRetrying, setIsRetrying] = useState(false);
   const [activeTab, setActiveTab] = useState('individual');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [showAllPlayers, setShowAllPlayers] = useState(false);
   const retryCountRef = useRef(0);
+  const isMountedRef = useRef(true);
+  const retryTimerRef = useRef(null);
+  const anthemTimerRef = useRef(null);
+  const confettiTimerRef = useRef(null);
 
-  const pin = session?.pin || '123456';
-  const isTeacher = Boolean(getTeacherToken(session?.pin));
+  // Synchronous render-time PIN gating: previous-session results NEVER render even for 1 frame if PIN changes without unmount
+  const results = (
+    resultsEntry &&
+    pin &&
+    resultsEntry.pin === pin &&
+    (!resultsEntry.data?.pin || String(resultsEntry.data.pin) === pin)
+  ) ? resultsEntry.data : null;
+
+  const fetchError = Boolean(
+    errorEntry &&
+    errorEntry.error &&
+    ((!pin && errorEntry.pin === '__none__') || (pin && errorEntry.pin === pin))
+  );
+
+  const activePinRef = useRef(pin);
+  activePinRef.current = pin;
+  const resultsRef = useRef(results);
+  resultsRef.current = results;
+  const isTeacher = Boolean(pin && getTeacherToken(pin));
 
   // Audio & confetti celebration
   const blastAnthem = useCallback(() => {
+    if (!isMountedRef.current) return;
     sfx.play('win');
     try {
       confetti({
@@ -3155,7 +3669,9 @@ function Leaderboard({ session, setMode, player }) {
         origin: { y: 0.6 },
         colors: ['#fbbf24', '#f59e0b', '#38bdf8', '#06b6d4', '#ec4899', '#c084fc']
       });
-      setTimeout(() => {
+      if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
+      confettiTimerRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
         confetti({
           particleCount: 50,
           angle: 60,
@@ -3174,53 +3690,100 @@ function Leaderboard({ session, setMode, player }) {
     } catch {}
   }, []);
 
-  const fetchResults = useCallback(async (isManual = false) => {
+  const fetchResults = useCallback(async (isManual = false, targetPin = activePinRef.current) => {
+    if (!targetPin || !isMountedRef.current || activePinRef.current !== targetPin) return;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     if (isManual) {
       retryCountRef.current = 0;
-      setFetchError(false);
+      setErrorEntry(null);
       setIsRetrying(true);
     }
     try {
-      const data = await get(`/sessions/${pin}/results`);
-      if (data && data.results) {
-        setResults(data);
-        setFetchError(false);
+      const data = await get(`/sessions/${targetPin}/results`);
+      if (!isMountedRef.current || activePinRef.current !== targetPin) return;
+      if (data?.pin && String(data.pin) !== String(targetPin)) return;
+      if (data && Array.isArray(data.results)) {
+        setResultsEntry({ pin: String(targetPin), data });
+        setErrorEntry(null);
         setIsRetrying(false);
-        setTimeout(blastAnthem, 400);
+        if (anthemTimerRef.current) clearTimeout(anthemTimerRef.current);
+        anthemTimerRef.current = setTimeout(blastAnthem, 400);
         return;
       }
       throw new Error('Invalid results payload');
     } catch (err) {
+      if (!isMountedRef.current || activePinRef.current !== targetPin) return;
       if (retryCountRef.current < 3) {
         retryCountRef.current += 1;
-        setTimeout(() => {
-          fetchResults(false);
+        retryTimerRef.current = setTimeout(() => {
+          fetchResults(false, targetPin);
         }, 1000);
       } else {
         setIsRetrying(false);
-        setFetchError(true);
+        setErrorEntry({ pin: String(targetPin), error: true });
       }
     }
-  }, [pin, blastAnthem]);
+  }, [blastAnthem]);
 
   useEffect(() => {
+    isMountedRef.current = true;
+    // Clear previous session results & errors immediately whenever PIN changes
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    if (anthemTimerRef.current) clearTimeout(anthemTimerRef.current);
+    if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
+
+    if (initialResults && pin && (!initialResults.pin || String(initialResults.pin) === pin)) {
+      setResultsEntry({ pin, data: initialResults });
+      setErrorEntry(initialFetchError ? { pin, error: true } : null);
+    } else {
+      setResultsEntry(null);
+      setErrorEntry(initialFetchError ? { pin: pin || '__none__', error: true } : null);
+    }
+    setIsRetrying(false);
+    setShowAllPlayers(false);
+    setSelectedFilter('all');
+    retryCountRef.current = 0;
+
+    if (!pin) {
+      setErrorEntry({ pin: '__none__', error: true });
+      return () => {
+        isMountedRef.current = false;
+      };
+    }
     sfx.play('win');
-    fetchResults();
+    if (!initialResults) {
+      fetchResults(false, pin);
+    }
 
     const unsubscribe = subscribeToSession(pin, {
       ResultsRevealed: (data) => {
-        if (data && data.results) {
-          setResults(data);
-          setFetchError(false);
-          setTimeout(blastAnthem, 400);
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
+        if (data?.pin && String(data.pin) !== String(pin)) return;
+        if (data && Array.isArray(data.results)) {
+          setResultsEntry({ pin, data });
+          setErrorEntry(null);
+          if (anthemTimerRef.current) clearTimeout(anthemTimerRef.current);
+          anthemTimerRef.current = setTimeout(blastAnthem, 400);
         }
       },
-      SessionReset: () => {
+      SessionReset: (data) => {
+        if (!isMountedRef.current || activePinRef.current !== pin) return;
+        if (data?.pin && String(data.pin) !== String(pin)) return;
+        const incomingVersion = Number(data?.state_version || 0);
+        const currentVersion = Number(resultsRef.current?.state_version || 0);
+        if (incomingVersion > 0 && currentVersion > 0 && incomingVersion <= currentVersion) {
+          return; // Drop stale reset event from before this session completed
+        }
+        clearPlayerAuth(pin);
         setMode('home');
       },
     });
 
     return () => {
+      isMountedRef.current = false;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      if (anthemTimerRef.current) clearTimeout(anthemTimerRef.current);
+      if (confettiTimerRef.current) clearTimeout(confettiTimerRef.current);
       unsubscribe();
     };
   }, [fetchResults, pin, blastAnthem, setMode]);
@@ -3235,7 +3798,7 @@ function Leaderboard({ session, setMode, player }) {
           <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
             <button
               className="btn-3d"
-              onClick={() => fetchResults(true)}
+              onClick={() => fetchResults(true, pin)}
               disabled={isRetrying}
               style={{ padding: '8px 18px', fontSize: '13px' }}
             >
@@ -3274,29 +3837,30 @@ function Leaderboard({ session, setMode, player }) {
     );
   }
 
-  const allPlayers = results.results || [];
+  const allPlayers = Array.isArray(results.results) ? results.results.filter(p => p && p.id != null) : [];
 
-  // Helper to enrich player with level, accuracy, avg speed and role (computed from real data only)
+  // Helper to enrich player with level, accuracy, avg speed and role (computed from authoritative server fields only)
   const enrichPlayer = (p) => {
     if (!p) return null;
     const avatarObj = getAvatar(p.avatar);
-    const scoreVal = p.score || 0;
+    const scoreVal = Number(p.score ?? 0);
     const calcLevel = Math.max(1, Math.floor(scoreVal / 450) + 1);
     const calcAccuracy = p.accuracy ?? (p.total_answers > 0 ? Math.round((p.correct_answers / p.total_answers) * 100) : 0);
+    const hasAvgTime = p.avg_time !== null && p.avg_time !== undefined && Number(p.total_answers ?? 0) > 0;
 
     return {
       ...p,
+      score: scoreVal,
       role: avatarObj.role || '',
       level: calcLevel,
       accuracy: calcAccuracy,
-      avgTime: p.avg_time ? `${p.avg_time}s` : '—',
-      isEmpty: false,
+      avgTime: hasAvgTime ? `${p.avg_time}s` : '—',
     };
   };
 
-  const top1 = enrichPlayer(allPlayers[0]);
-  const top2 = enrichPlayer(allPlayers[1]);
-  const top3 = enrichPlayer(allPlayers[2]);
+  const top1 = allPlayers[0] ? enrichPlayer(allPlayers[0]) : null;
+  const top2 = allPlayers[1] ? enrichPlayer(allPlayers[1]) : null;
+  const top3 = allPlayers[2] ? enrichPlayer(allPlayers[2]) : null;
 
   // Remaining challengers (rank 4+) or all players
   const restPlayers = allPlayers.slice(3).map((p) => enrichPlayer(p));
@@ -3306,7 +3870,7 @@ function Leaderboard({ session, setMode, player }) {
   const filteredChallengers = displayChallengers.filter(p => {
     if (!p) return false;
     if (selectedFilter === 'perfect') return p.accuracy === 100;
-    if (selectedFilter === 'speed') return p.avg_time != null && parseFloat(p.avg_time) <= 1.2;
+    if (selectedFilter === 'speed') return p.avg_time != null && Number(p.total_answers ?? 0) > 0 && parseFloat(p.avg_time) <= 1.2;
     if (selectedFilter === 'brain') return p.level >= 10;
     if (selectedFilter === 'streak') return (p.streak || 0) >= 3;
     return true;
@@ -3324,7 +3888,7 @@ function Leaderboard({ session, setMode, player }) {
 
   return (
     <main className="hof-universe">
-      {/* ── Top Header Section (matches reference image) ── */}
+      {/* ── Top Header Section ── */}
       <header className="hof-header">
         <div className="hof-header-left">
           <div className="hof-session-badge">
@@ -3362,286 +3926,257 @@ function Leaderboard({ session, setMode, player }) {
         </div>
       </header>
 
-      {/* ── Official Hall of Fame Glass Card (matches reference image) ── */}
+      {/* ── Official Hall of Fame Glass Card ── */}
       <section className="hof-stage-card">
-        {/* Top Center Tag */}
         <div className="hof-center-badge">
           <Award size={15} />
           <span>OFFICIAL HALL OF FAME</span>
         </div>
 
-        {/* The 3 Podium Columns: Left #2 (Silver), Center #1 (Champion), Right #3 (Bronze) */}
-        <div className="hof-podium-grid">
-          {/* ═══════ Column #2: Silver (Left) ═══════ */}
-          <div className="hof-column col-silver">
-            <div className="hof-rank-badge badge-silver">
-              <Trophy size={13} />
-              <span>#2 SILVER</span>
-            </div>
-
-            <div className="hof-avatar-anchor">
-              <div className="hof-avatar-circle circle-silver">
-                {top2 ? (
-                  getAvatar(top2.avatar).image ? (
-                    <img src={getAvatar(top2.avatar).image} alt={top2.name} className="hof-avatar-3d-champ" />
-                  ) : (
-                    <span className="hof-avatar-emoji">{getAvatar(top2.avatar).emoji}</span>
-                  )
-                ) : (
-                  <span className="hof-avatar-emoji" style={{ opacity: 0.3 }}>—</span>
-                )}
-              </div>
-              <span className="hof-corner-pin pin-silver" title="Silver Medal">🥈</span>
-            </div>
-
-            <div className="hof-player-info">
-              <strong className="hof-player-name">{top2 ? top2.name : '—'}</strong>
-              <span className="hof-player-role role-silver">{top2 ? top2.role : '—'}</span>
-              {top2 && (
-                <div className="hof-score-chip chip-silver">
-                  <strong>{top2.score.toLocaleString()} XP</strong>
-                  <span className="hof-dot">•</span>
-                  <span>Lvl {top2.level}</span>
+        {allPlayers.length === 0 ? (
+          <div className="hcs-empty-state" style={{ padding: '40px 20px' }}>
+            <Trophy size={40} />
+            <p>لا يوجد متسابقون مسجلون في هذه الجلسة</p>
+          </div>
+        ) : (
+          <div className="hof-podium-grid">
+            {/* ═══════ Column #2: Silver (Left) — rendered ONLY if real #2 exists ═══════ */}
+            {top2 && (
+              <div className="hof-column col-silver" data-player-id={top2.id}>
+                <div className="hof-rank-badge badge-silver">
+                  <Trophy size={13} />
+                  <span>#2 SILVER</span>
                 </div>
-              )}
-            </div>
 
-            {/* Stat row above podium */}
-            {top2 ? (
-              <div className="hof-stats-row">
-                <span className="stat-label">ACCURACY: {top2.accuracy}%</span>
-                <span className="stat-label">AVG: {top2.avgTime}</span>
-              </div>
-            ) : (
-              <div className="hof-stats-row" style={{ visibility: 'hidden' }}>
-                <span className="stat-label">—</span>
+                <div className="hof-avatar-anchor">
+                  <div className="hof-avatar-circle circle-silver">
+                    {getAvatar(top2.avatar).image ? (
+                      <img src={getAvatar(top2.avatar).image} alt={top2.name} className="hof-avatar-3d-champ" />
+                    ) : (
+                      <span className="hof-avatar-emoji">{getAvatar(top2.avatar).emoji}</span>
+                    )}
+                  </div>
+                  <span className="hof-corner-pin pin-silver" title="Silver Medal">🥈</span>
+                </div>
+
+                <div className="hof-player-info">
+                  <strong className="hof-player-name">{top2.name}</strong>
+                  <span className="hof-player-role role-silver">{top2.role}</span>
+                  <div className="hof-score-chip chip-silver">
+                    <strong>{top2.score.toLocaleString()} XP</strong>
+                    <span className="hof-dot">•</span>
+                    <span>Lvl {top2.level}</span>
+                  </div>
+                </div>
+
+                <div className="hof-stats-row">
+                  <span className="stat-label">ACCURACY: {top2.accuracy}%</span>
+                  <span className="stat-label">AVG: {top2.avgTime}</span>
+                </div>
+
+                <div className="hof-podium-block block-silver">
+                  <span className="hof-block-number">2</span>
+                  <div className="hof-neon-bar bar-silver" />
+                </div>
               </div>
             )}
 
-            {/* Solid Dark Podium Block #2 with Neon Cyan bottom bar */}
-            <div className="hof-podium-block block-silver">
-              <span className="hof-block-number">2</span>
-              <div className="hof-neon-bar bar-silver" />
-            </div>
-          </div>
-
-          {/* ═══════ Column #1: Champion (Center - Tallest) ═══════ */}
-          <div className="hof-column col-champion">
-            <div className="hof-rank-badge badge-champion">
-              <Crown size={15} />
-              <span>#1 CHAMPION</span>
-            </div>
-
-            <div className="hof-avatar-anchor">
-              <div className="hof-avatar-circle circle-champion">
-                <span className="champion-gold-aura" />
-                {top1 ? (
-                  getAvatar(top1.avatar).image ? (
-                    <img src={getAvatar(top1.avatar).image} alt={top1.name} className="hof-avatar-3d-champ" />
-                  ) : (
-                    <span className="hof-avatar-emoji emoji-champ">{getAvatar(top1.avatar).emoji}</span>
-                  )
-                ) : (
-                  <span className="hof-avatar-emoji" style={{ opacity: 0.3 }}>—</span>
-                )}
-              </div>
-              <span className="hof-corner-pin pin-gold" title="Gold Star">⭐</span>
-            </div>
-
-            <div className="hof-player-info">
-              <strong className="hof-player-name name-champion">{top1 ? top1.name : '—'}</strong>
-              <span className="hof-player-role role-champion">{top1 ? top1.role : '—'}</span>
-              {top1 && (
-                <div className="hof-score-chip chip-champion">
-                  <strong>{top1.score.toLocaleString()} XP</strong>
-                  <span className="hof-dot">•</span>
-                  <span>Lvl {top1.level}</span>
+            {/* ═══════ Column #1: Champion (Center) — rendered ONLY if real #1 exists ═══════ */}
+            {top1 && (
+              <div className="hof-column col-champion" data-player-id={top1.id}>
+                <div className="hof-rank-badge badge-champion">
+                  <Crown size={15} />
+                  <span>#1 CHAMPION</span>
                 </div>
-              )}
-            </div>
 
-            {/* Stat row above champion podium */}
-            {top1 ? (
-              <div className="hof-stats-row row-champion">
-                <span className="stat-pill-perfect">
-                  {top1.accuracy === 100 && results.total_questions ? `${results.total_questions}/${results.total_questions} PERFECT` : `ACCURACY: ${top1.accuracy}%`}
-                </span>
-                <span className="stat-label gold-label">
-                  AVG: {top1.avgTime} <Zap size={13} fill="currentColor" />
-                </span>
-              </div>
-            ) : (
-              <div className="hof-stats-row row-champion" style={{ visibility: 'hidden' }}>
-                <span className="stat-label">—</span>
+                <div className="hof-avatar-anchor">
+                  <div className="hof-avatar-circle circle-champion">
+                    <span className="champion-gold-aura" />
+                    {getAvatar(top1.avatar).image ? (
+                      <img src={getAvatar(top1.avatar).image} alt={top1.name} className="hof-avatar-3d-champ" />
+                    ) : (
+                      <span className="hof-avatar-emoji emoji-champ">{getAvatar(top1.avatar).emoji}</span>
+                    )}
+                  </div>
+                  <span className="hof-corner-pin pin-gold" title="Gold Star">⭐</span>
+                </div>
+
+                <div className="hof-player-info">
+                  <strong className="hof-player-name name-champion">{top1.name}</strong>
+                  <span className="hof-player-role role-champion">{top1.role}</span>
+                  <div className="hof-score-chip chip-champion">
+                    <strong>{top1.score.toLocaleString()} XP</strong>
+                    <span className="hof-dot">•</span>
+                    <span>Lvl {top1.level}</span>
+                  </div>
+                </div>
+
+                <div className="hof-stats-row row-champion">
+                  <span className="stat-pill-perfect">
+                    {top1.accuracy === 100 && results.total_questions ? `${results.total_questions}/${results.total_questions} PERFECT` : `ACCURACY: ${top1.accuracy}%`}
+                  </span>
+                  <span className="stat-label gold-label">
+                    AVG: {top1.avgTime} <Zap size={13} fill="currentColor" />
+                  </span>
+                </div>
+
+                <div className="hof-podium-block block-champion">
+                  <span className="hof-block-number num-champion">1</span>
+                  <div className="hof-neon-bar bar-champion" />
+                </div>
               </div>
             )}
 
-            {/* Solid Dark Podium Block #1 with Glowing Golden bottom bar */}
-            <div className="hof-podium-block block-champion">
-              <span className="hof-block-number num-champion">1</span>
-              <div className="hof-neon-bar bar-champion" />
-            </div>
-          </div>
-
-          {/* ═══════ Column #3: Bronze (Right) ═══════ */}
-          <div className="hof-column col-bronze">
-            <div className="hof-rank-badge badge-bronze">
-              <Shield size={13} />
-              <span>#3 BRONZE</span>
-            </div>
-
-            <div className="hof-avatar-anchor">
-              <div className="hof-avatar-circle circle-bronze">
-                {top3 ? (
-                  getAvatar(top3.avatar).image ? (
-                    <img src={getAvatar(top3.avatar).image} alt={top3.name} className="hof-avatar-3d-champ" />
-                  ) : (
-                    <span className="hof-avatar-emoji">{getAvatar(top3.avatar).emoji}</span>
-                  )
-                ) : (
-                  <span className="hof-avatar-emoji" style={{ opacity: 0.3 }}>—</span>
-                )}
-              </div>
-              <span className="hof-corner-pin pin-bronze" title="Bronze Bolt">⚡</span>
-            </div>
-
-            <div className="hof-player-info">
-              <strong className="hof-player-name">{top3 ? top3.name : '—'}</strong>
-              <span className="hof-player-role role-bronze">{top3 ? top3.role : '—'}</span>
-              {top3 && (
-                <div className="hof-score-chip chip-bronze">
-                  <strong>{top3.score.toLocaleString()} XP</strong>
-                  <span className="hof-dot">•</span>
-                  <span>Lvl {top3.level}</span>
+            {/* ═══════ Column #3: Bronze (Right) — rendered ONLY if real #3 exists ═══════ */}
+            {top3 && (
+              <div className="hof-column col-bronze" data-player-id={top3.id}>
+                <div className="hof-rank-badge badge-bronze">
+                  <Shield size={13} />
+                  <span>#3 BRONZE</span>
                 </div>
-              )}
-            </div>
 
-            {/* Stat row above podium */}
-            {top3 ? (
-              <div className="hof-stats-row">
-                <span className="stat-label">ACCURACY: {top3.accuracy}%</span>
-                <span className="stat-label">AVG: {top3.avgTime}</span>
-              </div>
-            ) : (
-              <div className="hof-stats-row" style={{ visibility: 'hidden' }}>
-                <span className="stat-label">—</span>
+                <div className="hof-avatar-anchor">
+                  <div className="hof-avatar-circle circle-bronze">
+                    {getAvatar(top3.avatar).image ? (
+                      <img src={getAvatar(top3.avatar).image} alt={top3.name} className="hof-avatar-3d-champ" />
+                    ) : (
+                      <span className="hof-avatar-emoji">{getAvatar(top3.avatar).emoji}</span>
+                    )}
+                  </div>
+                  <span className="hof-corner-pin pin-bronze" title="Bronze Bolt">⚡</span>
+                </div>
+
+                <div className="hof-player-info">
+                  <strong className="hof-player-name">{top3.name}</strong>
+                  <span className="hof-player-role role-bronze">{top3.role}</span>
+                  <div className="hof-score-chip chip-bronze">
+                    <strong>{top3.score.toLocaleString()} XP</strong>
+                    <span className="hof-dot">•</span>
+                    <span>Lvl {top3.level}</span>
+                  </div>
+                </div>
+
+                <div className="hof-stats-row">
+                  <span className="stat-label">ACCURACY: {top3.accuracy}%</span>
+                  <span className="stat-label">AVG: {top3.avgTime}</span>
+                </div>
+
+                <div className="hof-podium-block block-bronze">
+                  <span className="hof-block-number">3</span>
+                  <div className="hof-neon-bar bar-bronze" />
+                </div>
               </div>
             )}
-
-            {/* Solid Dark Podium Block #3 with Neon Amber bottom bar */}
-            <div className="hof-podium-block block-bronze">
-              <span className="hof-block-number">3</span>
-              <div className="hof-neon-bar bar-bronze" />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Live Challenger Rankings (Ranks 4+) Section (matches reference image) ── */}
-      <section className="hof-challengers-card">
-        <div className="hcs-header">
-          <div className="hcs-title-box">
-            <Target size={18} className="gold-color" />
-            <h3>Live Challenger Rankings {showAllPlayers ? '(جميع المتسابقين)' : '(Ranks 4+)'}</h3>
-            <span className="hcs-count-tag">{allPlayers.length} أبطال</span>
-          </div>
-
-          <div className="hcs-filter-chips">
-            <button
-              className={`hcs-chip ${selectedFilter === 'all' ? 'active-chip' : ''}`}
-              onClick={() => setSelectedFilter('all')}
-            >
-              الكل
-            </button>
-            <button
-              className={`hcs-chip chip-speed ${selectedFilter === 'speed' ? 'active-chip' : ''}`}
-              onClick={() => setSelectedFilter(selectedFilter === 'speed' ? 'all' : 'speed')}
-            >
-              ⚡ Lightning Fast (&lt;1.5s)
-            </button>
-            <button
-              className={`hcs-chip chip-brain ${selectedFilter === 'brain' ? 'active-chip' : ''}`}
-              onClick={() => setSelectedFilter(selectedFilter === 'brain' ? 'all' : 'brain')}
-            >
-              🧠 Einstein Brain
-            </button>
-            <button
-              className={`hcs-chip chip-streak ${selectedFilter === 'streak' ? 'active-chip' : ''}`}
-              onClick={() => setSelectedFilter(selectedFilter === 'streak' ? 'all' : 'streak')}
-            >
-              🔥 5-Streak
-            </button>
-            <button
-              className={`hcs-chip chip-perfect ${selectedFilter === 'perfect' ? 'active-chip' : ''}`}
-              onClick={() => setSelectedFilter(selectedFilter === 'perfect' ? 'all' : 'perfect')}
-            >
-              🎯 100% Accuracy
-            </button>
-          </div>
-        </div>
-
-        {/* Challenger List */}
-        <div className="hcs-table-body">
-          {filteredChallengers.length > 0 ? (
-            filteredChallengers.map((p, idx) => {
-              const isMe = player && p.id === player.id;
-              const displayRank = showAllPlayers ? (p.rank || idx + 1) : idx + 4;
-              return (
-                <div key={p.id || idx} className={`hcs-row ${isMe ? 'is-me-row' : ''}`}>
-                  <div className="hcs-rank-col">
-                    <span className="hcs-rank-pill">#{displayRank}</span>
-                  </div>
-
-                  <div className="hcs-player-col">
-                    <div className="hcs-avatar-mini"><AvatarDisplay avatarId={p.avatar} /></div>
-                    <div className="hcs-names">
-                      <strong>{p.name} {isMe && <span className="hcs-me-tag">أنت ⭐</span>}</strong>
-                      <small>{p.role || getAvatar(p.avatar).role}</small>
-                    </div>
-                  </div>
-
-                  <div className="hcs-level-col">
-                    <span className="hcs-lvl-chip">Lvl {p.level || 5}</span>
-                  </div>
-
-                  <div className="hcs-acc-col">
-                    <div className="hcs-acc-track">
-                      <div className="hcs-acc-fill" style={{ width: `${p.accuracy}%` }} />
-                    </div>
-                    <span className="hcs-acc-text">{p.accuracy}%</span>
-                  </div>
-
-                  <div className="hcs-speed-col">
-                    <span>{p.avgTime || '1.2s'}</span>
-                  </div>
-
-                  <div className="hcs-score-col">
-                    <strong>{(p.score || 0).toLocaleString()}</strong>
-                    <small>XP</small>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="hcs-empty-state">
-              <Trophy size={32} />
-              <p>الثلاثة الأوائل يتصدرون المنصة الشرفية بالأعلى! 🏆</p>
-              <button className="hcs-toggle-btn" onClick={() => setShowAllPlayers(true)}>
-                عرض جدول جميع المتسابقين
-              </button>
-            </div>
-          )}
-        </div>
-
-        {restPlayers.length > 0 && !showAllPlayers && (
-          <div className="hcs-footer-toggle">
-            <button className="hcs-toggle-btn" onClick={() => setShowAllPlayers(true)}>
-              عرض كل المتسابقين بالكامل ({allPlayers.length})
-            </button>
           </div>
         )}
       </section>
+
+      {/* ── Live Challenger Rankings (Ranks 4+) Section ── */}
+      {allPlayers.length > 0 && (
+        <section className="hof-challengers-card">
+          <div className="hcs-header">
+            <div className="hcs-title-box">
+              <Target size={18} className="gold-color" />
+              <h3>Live Challenger Rankings {showAllPlayers ? '(جميع المتسابقين)' : '(Ranks 4+)'}</h3>
+              <span className="hcs-count-tag">{allPlayers.length} أبطال</span>
+            </div>
+
+            <div className="hcs-filter-chips">
+              <button
+                className={`hcs-chip ${selectedFilter === 'all' ? 'active-chip' : ''}`}
+                onClick={() => setSelectedFilter('all')}
+              >
+                الكل
+              </button>
+              <button
+                className={`hcs-chip chip-speed ${selectedFilter === 'speed' ? 'active-chip' : ''}`}
+                onClick={() => setSelectedFilter(selectedFilter === 'speed' ? 'all' : 'speed')}
+              >
+                ⚡ Lightning Fast (&lt;1.5s)
+              </button>
+              <button
+                className={`hcs-chip chip-brain ${selectedFilter === 'brain' ? 'active-chip' : ''}`}
+                onClick={() => setSelectedFilter(selectedFilter === 'brain' ? 'all' : 'brain')}
+              >
+                🧠 Einstein Brain
+              </button>
+              <button
+                className={`hcs-chip chip-streak ${selectedFilter === 'streak' ? 'active-chip' : ''}`}
+                onClick={() => setSelectedFilter(selectedFilter === 'streak' ? 'all' : 'streak')}
+              >
+                🔥 5-Streak
+              </button>
+              <button
+                className={`hcs-chip chip-perfect ${selectedFilter === 'perfect' ? 'active-chip' : ''}`}
+                onClick={() => setSelectedFilter(selectedFilter === 'perfect' ? 'all' : 'perfect')}
+              >
+                🎯 100% Accuracy
+              </button>
+            </div>
+          </div>
+
+          {/* Challenger List */}
+          <div className="hcs-table-body">
+            {filteredChallengers.length > 0 ? (
+              filteredChallengers.map((p, idx) => {
+                const isMe = player && p.id === player.id;
+                const displayRank = showAllPlayers ? (p.rank || idx + 1) : idx + 4;
+                return (
+                  <div key={p.id} data-player-id={p.id} className={`hcs-row ${isMe ? 'is-me-row' : ''}`}>
+                    <div className="hcs-rank-col">
+                      <span className="hcs-rank-pill">#{displayRank}</span>
+                    </div>
+
+                    <div className="hcs-player-col">
+                      <div className="hcs-avatar-mini"><AvatarDisplay avatarId={p.avatar} /></div>
+                      <div className="hcs-names">
+                        <strong>{p.name} {isMe && <span className="hcs-me-tag">أنت ⭐</span>}</strong>
+                        <small>{p.role || getAvatar(p.avatar).role}</small>
+                      </div>
+                    </div>
+
+                    <div className="hcs-level-col">
+                      <span className="hcs-lvl-chip">Lvl {p.level ?? 1}</span>
+                    </div>
+
+                    <div className="hcs-acc-col">
+                      <div className="hcs-acc-track">
+                        <div className="hcs-acc-fill" style={{ width: `${p.accuracy}%` }} />
+                      </div>
+                      <span className="hcs-acc-text">{p.accuracy}%</span>
+                    </div>
+
+                    <div className="hcs-speed-col">
+                      <span>{p.avgTime ?? '—'}</span>
+                    </div>
+
+                    <div className="hcs-score-col">
+                      <strong>{(p.score ?? 0).toLocaleString()}</strong>
+                      <small>XP</small>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="hcs-empty-state">
+                <Trophy size={32} />
+                <p>المتصدرون يتصدرون المنصة الشرفية بالأعلى! 🏆</p>
+                <button className="hcs-toggle-btn" onClick={() => setShowAllPlayers(true)}>
+                  عرض جدول جميع المتسابقين
+                </button>
+              </div>
+            )}
+          </div>
+
+          {restPlayers.length > 0 && !showAllPlayers && (
+            <div className="hcs-footer-toggle">
+              <button className="hcs-toggle-btn" onClick={() => setShowAllPlayers(true)}>
+                عرض كل المتسابقين بالكامل ({allPlayers.length})
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* ── Footer Action Buttons ── */}
       <footer className="hof-actions-footer">
@@ -3661,8 +4196,13 @@ function Leaderboard({ session, setMode, player }) {
   );
 }
 
+export { App, Leaderboard, StudentPlay, TeacherAuthModal, TeacherDashboard };
+
 /* ── Mount ── */
-createRoot(document.getElementById('root')).render(<App />);
+const rootEl = typeof document !== 'undefined' ? document.getElementById('root') : null;
+if (rootEl) {
+  createRoot(rootEl).render(<App />);
+}
 
 
 

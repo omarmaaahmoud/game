@@ -15,12 +15,14 @@ class AnswerRevealed implements ShouldBroadcastNow
     public string $pin;
     public int $correctChoiceId;
     public ?int $questionId;
+    public int $stateVersion;
 
-    public function __construct(string $pin, int $correctChoiceId, ?int $questionId = null)
+    public function __construct(string $pin, int $correctChoiceId, ?int $questionId = null, int $stateVersion = 0)
     {
         $this->pin = $pin;
         $this->correctChoiceId = $correctChoiceId;
         $this->questionId = $questionId;
+        $this->stateVersion = $stateVersion;
     }
 
     public function broadcastOn(): array
@@ -42,6 +44,7 @@ class AnswerRevealed implements ShouldBroadcastNow
             'question_state' => 'revealed',
             'correct_choice_id' => $this->correctChoiceId,
             'question_id' => $this->questionId,
+            'state_version' => $this->stateVersion,
             '_ts' => (int) round(microtime(true) * 1000),
         ];
     }

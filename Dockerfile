@@ -41,4 +41,4 @@ ENV PHP_CLI_SERVER_WORKERS=8
 
 EXPOSE ${PORT:-8000}
 
-CMD php artisan migrate --force 2>/dev/null; php artisan db:seed --force 2>/dev/null; php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
+CMD php artisan migrate --force 2>/dev/null; php artisan serve --host=0.0.0.0 --port=${PORT:-8000}

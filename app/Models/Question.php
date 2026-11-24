@@ -8,7 +8,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Question extends Model
 {
-    protected $fillable = ['game_session_id', 'question_text', 'question_text_ar', 'order', 'time_limit'];
+    protected $fillable = ['game_session_id', 'question_text', 'question_text_ar', 'order', 'time_limit', 'is_revealed'];
+
+    protected $casts = [
+        'is_revealed' => 'boolean',
+    ];
 
     public function gameSession(): BelongsTo
     {

@@ -49,8 +49,8 @@ class GameController extends Controller
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
 
-        // 1. Check player token and player ownership FIRST (S1.4)
-        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        // 1. Check player token and player ownership FIRST (S1.4, header-only)
+        $playerToken = $request->header('X-Player-Token');
         if (!$playerToken) {
             return response()->json([
                 'error' => 'Player authorization required',
@@ -149,9 +149,31 @@ class GameController extends Controller
             $points = (int) round(500 + ($speedRatio * 500)); // Max 1000 points
         }
 
-        // Atomic insert + atomic score increment to prevent race conditions & double scoring (S1.3)
+        // Atomic write-first player update + answer insert to prevent concurrent reset/state-change orphans & double scoring (S1.3)
         try {
-            DB::transaction(function () use ($player, $question, $choice, $isCorrect, $timeTaken, $points) {
+            DB::transaction(function () use ($session, $player, $question, $choice, $isCorrect, $timeTaken, $points) {
+                // First SQL in transaction: conditional write verifying player still exists and session is still active & answering
+                $affectedPlayer = DB::table('players')
+                    ->where('id', $player->id)
+                    ->where('game_session_id', $session->id)
+                    ->whereExists(function ($q) use ($session, $question) {
+                        $q->select(DB::raw(1))
+                            ->from('game_sessions')
+                            ->where('id', $session->id)
+                            ->where('status', 'active')
+                            ->where('question_state', 'answering')
+                            ->where('current_question_index', $question->order);
+                    })
+                    ->update([
+                        'score' => $isCorrect ? DB::raw('score + ' . (int) $points) : DB::raw('score'),
+                        'streak' => $isCorrect ? DB::raw('streak + 1') : 0,
+                        'updated_at' => now(),
+                    ]);
+
+                if ($affectedPlayer === 0) {
+                    throw new \RuntimeException('GAME_NOT_ACTIVE_CONCURRENT');
+                }
+
                 Answer::create([
                     'player_id' => $player->id,
                     'question_id' => $question->id,
@@ -162,13 +184,20 @@ class GameController extends Controller
                     'answered_at' => now(),
                 ]);
 
-                if ($isCorrect) {
-                    Player::whereKey($player->id)->increment('score', $points);
-                    Player::whereKey($player->id)->increment('streak', 1);
-                } else {
-                    Player::whereKey($player->id)->update(['streak' => 0]);
-                }
-            });
+                DB::afterCommit(function () use ($session, $player, $question) {
+                    $answeredCount = Answer::where('question_id', $question->id)->count();
+                    $totalPlayers = $session->players()->count();
+
+                    // Broadcast StudentAnswered WITHOUT player_name for privacy (S1.5)
+                    broadcast(new StudentAnswered(
+                        $session->pin,
+                        $player->id,
+                        '',
+                        $answeredCount,
+                        $totalPlayers
+                    ));
+                });
+            }, 5);
         } catch (UniqueConstraintViolationException $e) {
             return response()->json([
                 'error' => 'Already answered this question',
@@ -181,20 +210,22 @@ class GameController extends Controller
                     'code' => 'ALREADY_ANSWERED',
                 ], 409);
             }
+            if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
+            }
+            throw $e;
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'GAME_NOT_ACTIVE_CONCURRENT') {
+                return response()->json([
+                    'error' => 'Game is not active',
+                    'code' => 'GAME_NOT_ACTIVE',
+                ], 422);
+            }
             throw $e;
         }
-
-        $answeredCount = Answer::where('question_id', $question->id)->count();
-        $totalPlayers = $session->players()->count();
-
-        // Broadcast StudentAnswered WITHOUT player_name for privacy (S1.5)
-        broadcast(new StudentAnswered(
-            $session->pin,
-            $player->id,
-            '',
-            $answeredCount,
-            $totalPlayers
-        ));
 
         // When QUIZ_REVEAL_ON_ANSWER is false (default), do not reveal answer or score early
         $revealOnAnswer = (bool) config('quiz.reveal_on_answer', false);
@@ -221,7 +252,7 @@ class GameController extends Controller
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
 
-        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        $playerToken = $request->header('X-Player-Token');
         if (!$playerToken) {
             return response()->json([
                 'error' => 'Player authorization required',
@@ -241,8 +272,16 @@ class GameController extends Controller
             ], 403);
         }
 
-        $questionId = $request->query('question_id');
         $currentQuestion = $session->currentQuestion();
+        // Fail closed if there is no valid current question
+        if (!$currentQuestion) {
+            return response()->json([
+                'error' => 'No active question',
+                'code' => 'NO_QUESTION',
+            ], 422);
+        }
+
+        $questionId = $request->query('question_id');
 
         if ($questionId) {
             $targetQuestion = $session->questions()->find($questionId);
@@ -252,29 +291,29 @@ class GameController extends Controller
                     'code' => 'NO_QUESTION',
                 ], 422);
             }
-            if ($currentQuestion && (int) $targetQuestion->order > (int) $currentQuestion->order) {
+            if ((int) $targetQuestion->order > (int) $currentQuestion->order) {
                 return response()->json([
                     'error' => 'Question is in future',
                     'code' => 'NOT_REVEALED',
                 ], 409);
             }
-            if ($currentQuestion && (int) $targetQuestion->id === (int) $currentQuestion->id) {
+            if ((int) $targetQuestion->id === (int) $currentQuestion->id) {
                 if ($session->question_state !== 'revealed') {
                     return response()->json([
                         'error' => 'Question result is not revealed yet',
                         'code' => 'NOT_REVEALED',
                     ], 409);
                 }
+            } elseif (!(bool) $targetQuestion->is_revealed) {
+                // Historical question was skipped without ever being revealed
+                return response()->json([
+                    'error' => 'Question result was not revealed',
+                    'code' => 'NOT_REVEALED',
+                ], 409);
             }
             $question = $targetQuestion;
         } else {
             $question = $currentQuestion;
-            if (!$question) {
-                return response()->json([
-                    'error' => 'No active question',
-                    'code' => 'NO_QUESTION',
-                ], 422);
-            }
             if ($session->question_state !== 'revealed') {
                 return response()->json([
                     'error' => 'Question result is not revealed yet',
@@ -320,12 +359,13 @@ class GameController extends Controller
 
         $players = $session->players()
             ->orderByDesc('score')
+            ->orderBy('id', 'asc')
             ->take(12)
             ->get(['id', 'name', 'avatar', 'score', 'streak']);
 
         $myRank = null;
         $myScore = null;
-        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        $playerToken = $request->header('X-Player-Token');
         if ($playerToken) {
             $tokenHash = hash('sha256', (string) $playerToken);
             $currentPlayer = Player::where('game_session_id', $session->id)
@@ -338,6 +378,7 @@ class GameController extends Controller
         }
 
         return response()->json([
+            'pin' => $session->pin,
             'leaderboard' => $players->values()->map(function ($player, $index) {
                 return [
                     'rank' => $index + 1,
@@ -415,6 +456,7 @@ class GameController extends Controller
         $players = $session->players()
             ->with('answers')
             ->orderByDesc('score')
+            ->orderBy('id', 'asc')
             ->get()
             ->values()
             ->map(function ($player, $index) {
@@ -425,7 +467,7 @@ class GameController extends Controller
 
                 return [
                     'rank' => $index + 1,
-                    'id' => $player->id,
+                    'id' => (int) $player->id,
                     'name' => $player->name,
                     'avatar' => $player->avatar,
                     'score' => (int) $player->score,
@@ -438,9 +480,11 @@ class GameController extends Controller
             });
 
         return response()->json([
+            'pin' => $session->pin,
+            'state_version' => (int) ($session->state_version ?? 0),
             'title' => $session->title,
             'total_questions' => $session->questions()->count(),
-            'total_players' => $session->players()->count(),
+            'total_players' => $players->count(),
             'results' => $players,
             'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);

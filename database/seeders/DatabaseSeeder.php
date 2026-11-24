@@ -11,7 +11,12 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // Sample ready session
+        // Section 7: Only seed demo data in local/testing environments
+        if (!app()->environment('local', 'testing')) {
+            return;
+        }
+
+        // Sample ready session for local development
         $session = GameSession::firstOrCreate(
             ['pin' => '123456'],
             [

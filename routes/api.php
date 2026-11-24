@@ -2,10 +2,18 @@
 
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\GameController;
+use App\Http\Controllers\TeacherAuthController;
 use Illuminate\Support\Facades\Route;
 
-// Session management
-Route::post('/sessions', [SessionController::class, 'store'])->middleware('throttle:api.create');
+// Teacher portal authentication (Section 7)
+Route::post('/teacher/auth', [TeacherAuthController::class, 'auth'])->middleware('throttle:api.auth');
+Route::middleware('teacher.global')->group(function () {
+    Route::get('/teacher/verify', [TeacherAuthController::class, 'verify']);
+    Route::post('/teacher/logout', [TeacherAuthController::class, 'logout']);
+    Route::post('/sessions', [SessionController::class, 'store'])->middleware('throttle:api.create');
+});
+
+// Session lookup & student join
 Route::get('/sessions/{pin}', [SessionController::class, 'show'])->middleware('throttle:api.pin');
 Route::post('/sessions/{pin}/join', [SessionController::class, 'join'])->middleware('throttle:api.join');
 Route::get('/sessions/{pin}/players', [SessionController::class, 'players']);

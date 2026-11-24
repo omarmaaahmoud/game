@@ -18,11 +18,30 @@ return new class extends Migration
                 ->get();
 
             foreach ($duplicates as $dup) {
-                DB::table('players')
+                // Rename duplicates instead of deleting — preserves answers and player data (Section 6)
+                $dupeRows = DB::table('players')
                     ->where('game_session_id', $dup->game_session_id)
                     ->where('name', $dup->name)
                     ->where('id', '!=', $dup->keep_id)
-                    ->delete();
+                    ->orderBy('id')
+                    ->get();
+
+                $suffix = 1;
+                foreach ($dupeRows as $dupeRow) {
+                    $newName = $dupeRow->name . '_dup_' . $suffix;
+                    // Ensure the new name doesn't collide either
+                    while (DB::table('players')
+                        ->where('game_session_id', $dupeRow->game_session_id)
+                        ->where('name', $newName)
+                        ->exists()) {
+                        $suffix++;
+                        $newName = $dupeRow->name . '_dup_' . $suffix;
+                    }
+                    DB::table('players')
+                        ->where('id', $dupeRow->id)
+                        ->update(['name' => $newName]);
+                    $suffix++;
+                }
             }
 
             Schema::table('players', function (Blueprint $table) {

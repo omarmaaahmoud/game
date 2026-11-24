@@ -13,10 +13,12 @@ class SessionReset implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public string $pin;
+    public int $stateVersion;
 
-    public function __construct(string $pin)
+    public function __construct(string $pin, int $stateVersion)
     {
         $this->pin = $pin;
+        $this->stateVersion = $stateVersion;
     }
 
     public function broadcastOn(): array
@@ -36,8 +38,8 @@ class SessionReset implements ShouldBroadcastNow
         return [
             'pin' => $this->pin,
             'status' => 'waiting',
+            'state_version' => $this->stateVersion,
             '_ts' => (int) round(microtime(true) * 1000),
         ];
     }
 }
-

@@ -14,14 +14,20 @@
  * 10. 100 students fetch final podium results (GET /api/sessions/:pin/results)
  * 
  * Usage:
- *   node tests/load_test_classroom.js [--host=http://127.0.0.1:8000] [--students=100]
+ *   node tests/load_test_classroom.js --url=http://127.0.0.1:8000 [--students=100]
  */
 
 const args = process.argv.slice(2);
-const hostArg = args.find(a => a.startsWith('--host='));
+const urlArg = args.find(a => a.startsWith('--url='));
 const studentsArg = args.find(a => a.startsWith('--students='));
 
-const BASE_URL = hostArg ? hostArg.split('=')[1].replace(/\/$/, '') : 'http://127.0.0.1:8000';
+if (!urlArg || !urlArg.split('=')[1]) {
+  console.error('❌ Error: --url=<base_url> is required (no default URL to prevent accidental production hits).');
+  console.error('   Usage: node tests/load_test_classroom.js --url=http://127.0.0.1:8000 [--students=100]');
+  process.exit(1);
+}
+
+const BASE_URL = urlArg.split('=')[1].replace(/\/$/, '');
 const STUDENT_COUNT = studentsArg ? parseInt(studentsArg.split('=')[1], 10) : 100;
 
 const AVATARS = ['spongebob', 'patrick', 'squidward', 'sandy', 'mrkrabs', 'plankton', 'gary', 'pearl', 'lion', 'panda', 'fox', 'koala'];
@@ -56,12 +62,13 @@ const stats = {
   finalResults: new LatencyTracker(),
 };
 
-async function timedFetch(url, options = {}, tracker = null) {
+async function timedFetch(url, options = {}, tracker = null, expectStatus = null) {
   const start = performance.now();
   try {
     const res = await fetch(url, options);
     const duration = performance.now() - start;
-    if (tracker) tracker.record(duration, !res.ok && res.status !== 409);
+    const isOk = expectStatus !== null ? res.status === expectStatus : res.ok;
+    if (tracker) tracker.record(duration, !isOk);
     return res;
   } catch (err) {
     const duration = performance.now() - start;
@@ -77,21 +84,16 @@ async function run() {
   console.log(`║  Students: ${String(STUDENT_COUNT).padEnd(49)}║`);
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
-  // Verify server is reachable
+  // Verify server is reachable — exit non-zero on failure
   try {
-    const health = await fetch(`${BASE_URL}/api/health`).catch(() => null);
-    if (!health && !(await fetch(`${BASE_URL}/api/sessions/check-connection`).catch(() => null))) {
-      // Quick probe to root or api
-      const probe = await fetch(`${BASE_URL}/`).catch(() => null);
-      if (!probe) {
-        console.warn(`⚠️ Warning: Server at ${BASE_URL} not reachable. Start server with "php artisan serve" first.`);
-        console.log('💡 For CI / offline execution, verify with PHP test suite: "php tests/test_audit_hardening.php"');
-        process.exit(0);
-      }
+    const health = await fetch(`${BASE_URL}/api/health`);
+    if (!health.ok) {
+      console.error(`❌ Error: Health check at ${BASE_URL}/api/health returned HTTP ${health.status}.`);
+      process.exit(1);
     }
-  } catch {
-    console.warn(`⚠️ Server at ${BASE_URL} not reachable. Exiting load test.`);
-    process.exit(0);
+  } catch (err) {
+    console.error(`❌ Error: Server at ${BASE_URL} is unreachable (${err.message}).`);
+    process.exit(1);
   }
 
   // 1. Teacher creates session
@@ -252,7 +254,11 @@ async function run() {
     return res.status;
   });
   const dupStatuses = await Promise.all(dupPromises);
-  const all409 = dupStatuses.every(st => st === 409 || st === 200);
+  const all409 = dupStatuses.every(st => st === 409);
+  if (!all409) {
+    console.error(`❌ Duplicate answer check FAILED: statuses=${JSON.stringify(dupStatuses)}`);
+    process.exit(1);
+  }
   console.log(`✅ Duplicate answer checks passed (HTTP 409 ALREADY_ANSWERED): ${all409}\n`);
 
   // 7. Teacher reveals correct answer
@@ -266,6 +272,7 @@ async function run() {
   });
   if (!revealRes.ok) {
     console.error('Failed to reveal answer:', await revealRes.text());
+    process.exit(1);
   } else {
     console.log('✅ Answer revealed!\n');
   }
@@ -310,12 +317,19 @@ async function run() {
   console.log('╠══════════════════════════════════════════════════════════════╣');
   console.log('║ Endpoint         Count    p50 (ms)  p95 (ms)  p99 (ms) Errors║');
   console.log('╟──────────────────────────────────────────────────────────────╢');
+  let totalErrors = 0;
   for (const [name, tracker] of Object.entries(stats)) {
     const s = tracker.stats();
+    totalErrors += s.errors;
     const line = `║ ${name.padEnd(16)} ${String(s.count).padEnd(8)} ${String(s.p50).padEnd(9)} ${String(s.p95).padEnd(9)} ${String(s.p99).padEnd(8)} ${String(s.errors).padEnd(6)}║`;
     console.log(line);
   }
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
+
+  if (activeStudents.length !== STUDENT_COUNT || successAnswers !== activeStudents.length || totalErrors > 0) {
+    console.error(`❌ Load test finished with failures (joined=${activeStudents.length}/${STUDENT_COUNT}, answers=${successAnswers}/${activeStudents.length}, errors=${totalErrors})`);
+    process.exit(1);
+  }
 }
 
 run().catch(err => {

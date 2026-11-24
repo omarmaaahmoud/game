@@ -38,7 +38,7 @@ class GameSession extends Model
 
     public function players(): HasMany
     {
-        return $this->hasMany(Player::class)->orderByDesc('score');
+        return $this->hasMany(Player::class)->orderByDesc('score')->orderBy('id', 'asc');
     }
 
     public function currentQuestion(): ?Question

@@ -15,15 +15,19 @@ const channelLeaveTimers = {};
 export function getEcho() {
   if (echoInstance) return echoInstance;
 
-  const currentHost = window.location.hostname || '127.0.0.1';
-  const reverbKey = import.meta.env.VITE_REVERB_APP_KEY || '8wrdb1nljzsyjjtschzi';
+  const reverbKey = import.meta.env.VITE_REVERB_APP_KEY;
+  if (!reverbKey) {
+    console.warn('[Echo] VITE_REVERB_APP_KEY is not set — WebSocket disabled. Polling will be used.');
+    return null;
+  }
+  const reverbHost = import.meta.env.VITE_REVERB_HOST || window.location.hostname || '127.0.0.1';
   const reverbPort = import.meta.env.VITE_REVERB_PORT || 8085;
   const reverbScheme = import.meta.env.VITE_REVERB_SCHEME || 'http';
 
   echoInstance = new Echo({
     broadcaster: 'reverb',
     key: reverbKey,
-    wsHost: currentHost,
+    wsHost: reverbHost,
     wsPort: Number(reverbPort),
     wssPort: Number(reverbPort),
     forceTLS: window.location.protocol === 'https:' || reverbScheme === 'https',
@@ -80,6 +84,7 @@ export function subscribeToSession(pin, listeners = {}, onReconnect = null) {
   if (!pin) return () => {};
 
   const echo = getEcho();
+  if (!echo) return () => {}; // WebSocket disabled — polling-only mode
   const channelName = `session.${pin}`;
 
   // If a delayed leave was pending for this channel, cancel it

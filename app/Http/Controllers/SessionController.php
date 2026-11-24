@@ -219,26 +219,43 @@ class SessionController extends Controller
     public function start(string $pin): JsonResponse
     {
         try {
-            return DB::transaction(function () use ($pin) {
-                $session = GameSession::where('pin', $pin)->firstOrFail();
+            $session = GameSession::where('pin', $pin)->firstOrFail();
 
-                // Idempotent: if already active, return current state
-                if ($session->status === 'active') {
-                    return response()->json([
-                        'status' => 'active',
-                        'current_question_index' => (int) $session->current_question_index,
-                        'question_state' => $session->question_state,
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
-                }
+            // Idempotent: if already active, return current state
+            if ($session->status === 'active') {
+                return response()->json([
+                    'status' => 'active',
+                    'current_question_index' => (int) $session->current_question_index,
+                    'question_state' => $session->question_state,
+                    'question_started_at' => $session->question_started_at,
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
 
-                $nowMs = (int) round(microtime(true) * 1000);
-                $leadMs = config('quiz.sync_lead_ms', 2000);
-                $startedAt = $nowMs + $leadMs;
-                $currentVersion = (int) $session->state_version;
+            $nowMs = (int) round(microtime(true) * 1000);
+            $leadMs = config('quiz.sync_lead_ms', 2000);
+            $startedAt = $nowMs + $leadMs;
+            $currentVersion = (int) $session->state_version;
+            $firstQuestion = $session->questions()->with('choices')->orderBy('order')->first();
+            $totalQuestions = $session->questions()->count();
 
+            $formattedQ = $firstQuestion ? [
+                'id' => $firstQuestion->id,
+                'question_text' => $firstQuestion->question_text,
+                'question_text_ar' => $firstQuestion->question_text_ar,
+                'time_limit' => $firstQuestion->time_limit,
+                'order' => $firstQuestion->order,
+                'choices' => $firstQuestion->choices->map(fn ($c) => [
+                    'id' => $c->id,
+                    'choice_text' => $c->choice_text,
+                    'choice_text_ar' => $c->choice_text_ar,
+                    'order' => $c->order,
+                ])->values()->all(),
+            ] : null;
+
+            return DB::transaction(function () use ($session, $currentVersion, $startedAt, $formattedQ, $totalQuestions) {
+                // Write-first inside transaction to avoid SQLite SHARED->RESERVED upgrade deadlock
                 $affected = GameSession::where('id', $session->id)
                     ->where('status', 'waiting')
                     ->where('state_version', $currentVersion)
@@ -263,25 +280,8 @@ class SessionController extends Controller
                     ]);
                 }
 
-                $firstQuestion = $session->questions()->with('choices')->orderBy('order')->first();
-                $formattedQ = $firstQuestion ? [
-                    'id' => $firstQuestion->id,
-                    'question_text' => $firstQuestion->question_text,
-                    'question_text_ar' => $firstQuestion->question_text_ar,
-                    'time_limit' => $firstQuestion->time_limit,
-                    'order' => $firstQuestion->order,
-                    'choices' => $firstQuestion->choices->map(fn ($c) => [
-                        'id' => $c->id,
-                        'choice_text' => $c->choice_text,
-                        'choice_text_ar' => $c->choice_text_ar,
-                        'order' => $c->order,
-                    ])->values()->all(),
-                ] : null;
-
-                $totalQuestions = $session->questions()->count();
-
-                DB::afterCommit(function () use ($session, $formattedQ, $totalQuestions) {
-                    broadcast(new GameStarted($session->pin, $formattedQ, $totalQuestions, 0));
+                DB::afterCommit(function () use ($session, $formattedQ, $totalQuestions, $startedAt, $currentVersion) {
+                    broadcast(new GameStarted($session->pin, $formattedQ, $totalQuestions, 0, $startedAt, $currentVersion + 1));
                 });
 
                 return response()->json([
@@ -308,42 +308,56 @@ class SessionController extends Controller
     public function next(Request $request, string $pin): JsonResponse
     {
         try {
-            return DB::transaction(function () use ($request, $pin) {
-                $session = GameSession::where('pin', $pin)->firstOrFail();
+            $session = GameSession::where('pin', $pin)->firstOrFail();
 
-                // M3.1: Reject if session is paused
-                if ($session->status === 'paused') {
-                    return response()->json([
-                        'error' => 'Cannot advance question while session is paused',
-                        'code' => 'INVALID_STATE',
-                    ], 422);
-                }
+            // M3.1: Reject if session is paused
+            if ($session->status === 'paused') {
+                return response()->json([
+                    'error' => 'Cannot advance question while session is paused',
+                    'code' => 'INVALID_STATE',
+                ], 422);
+            }
 
-                $allQuestions = $session->questions()->with('choices')->orderBy('order')->get();
-                $totalQuestions = $allQuestions->count();
-                $nowMs = (int) round(microtime(true) * 1000);
+            // Phase 2.3: Reject if session is already completed (cannot revert to active)
+            if ($session->status === 'completed') {
+                return response()->json([
+                    'error' => 'Session is already completed',
+                    'code' => 'SESSION_COMPLETED',
+                    'status' => 'completed',
+                    'current_question_index' => (int) $session->current_question_index,
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ], 409);
+            }
 
-                $currentIndex = (int) $session->current_question_index;
-                $currentVersion = (int) $session->state_version;
+            $allQuestions = $session->questions()->with('choices')->orderBy('order')->get();
+            $totalQuestions = $allQuestions->count();
+            $nowMs = (int) round(microtime(true) * 1000);
 
-                // Idempotency guard: caller expected_index mismatch
-                $expectedIndex = $request->input('expected_index');
-                if ($expectedIndex !== null && (int) $expectedIndex !== $currentIndex) {
-                    return response()->json([
-                        'status' => $session->status,
-                        'current_question_index' => $currentIndex,
-                        'total_questions' => $totalQuestions,
-                        'question_state' => $session->question_state,
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => $currentVersion,
-                        'server_now_ms' => $nowMs,
-                    ]);
-                }
+            $currentIndex = (int) $session->current_question_index;
+            $currentVersion = (int) $session->state_version;
 
-                $nextIndex = $currentIndex + 1;
+            // Idempotency guard: caller expected_index mismatch
+            $expectedIndex = $request->input('expected_index');
+            if ($expectedIndex !== null && (int) $expectedIndex !== $currentIndex) {
+                return response()->json([
+                    'status' => $session->status,
+                    'current_question_index' => $currentIndex,
+                    'total_questions' => $totalQuestions,
+                    'question_state' => $session->question_state,
+                    'question_started_at' => $session->question_started_at,
+                    'state_version' => $currentVersion,
+                    'server_now_ms' => $nowMs,
+                ]);
+            }
 
-                if ($nextIndex >= $totalQuestions) {
+            $nextIndex = $currentIndex + 1;
+
+            if ($nextIndex >= $totalQuestions) {
+                $currentQuestion = $allQuestions->get($currentIndex);
+                return DB::transaction(function () use ($session, $currentIndex, $currentVersion, $currentQuestion) {
                     $affected = GameSession::where('id', $session->id)
+                        ->whereNotIn('status', ['paused', 'completed'])
                         ->where('current_question_index', $currentIndex)
                         ->where('state_version', $currentVersion)
                         ->update([
@@ -356,6 +370,22 @@ class SessionController extends Controller
 
                     if ($affected === 0) {
                         $session->refresh();
+                        if ($session->status === 'completed') {
+                            return response()->json([
+                                'error' => 'Session is already completed',
+                                'code' => 'SESSION_COMPLETED',
+                                'status' => 'completed',
+                                'current_question_index' => (int) $session->current_question_index,
+                                'state_version' => (int) $session->state_version,
+                                'server_now_ms' => (int) round(microtime(true) * 1000),
+                            ], 409);
+                        }
+                        if ($session->status === 'paused') {
+                            return response()->json([
+                                'error' => 'Cannot advance question while session is paused',
+                                'code' => 'INVALID_STATE',
+                            ], 422);
+                        }
                         return response()->json([
                             'status' => $session->status,
                             'current_question_index' => (int) $session->current_question_index,
@@ -365,8 +395,12 @@ class SessionController extends Controller
                         ]);
                     }
 
-                    DB::afterCommit(function () use ($session) {
-                        broadcast(new GameFinished($session->pin));
+                    if ($currentQuestion) {
+                        $currentQuestion->update(['is_revealed' => true]);
+                    }
+
+                    DB::afterCommit(function () use ($session, $currentVersion, $currentQuestion) {
+                        broadcast(new GameFinished($session->pin, $currentVersion + 1, $currentQuestion?->id));
                     });
 
                     return response()->json([
@@ -375,13 +409,30 @@ class SessionController extends Controller
                         'state_version' => $currentVersion + 1,
                         'server_now_ms' => (int) round(microtime(true) * 1000),
                     ]);
-                }
+                }, 5);
+            }
 
-                $leadMs = config('quiz.sync_lead_ms', 2000);
-                $startedAt = $nowMs + $leadMs;
+            $leadMs = config('quiz.sync_lead_ms', 2000);
+            $startedAt = $nowMs + $leadMs;
+            $nextQuestion = $allQuestions->get($nextIndex);
+            $formattedQ = $nextQuestion ? [
+                'id' => $nextQuestion->id,
+                'question_text' => $nextQuestion->question_text,
+                'question_text_ar' => $nextQuestion->question_text_ar,
+                'time_limit' => $nextQuestion->time_limit,
+                'order' => $nextQuestion->order,
+                'choices' => $nextQuestion->choices->map(fn ($c) => [
+                    'id' => $c->id,
+                    'choice_text' => $c->choice_text,
+                    'choice_text_ar' => $c->choice_text_ar,
+                    'order' => $c->order,
+                ])->values()->all(),
+            ] : [];
 
-                // Atomic conditional update preventing concurrent question skips
+            return DB::transaction(function () use ($session, $currentIndex, $currentVersion, $nextIndex, $startedAt, $totalQuestions, $formattedQ) {
+                // Atomic conditional write-first update preventing concurrent question skips, post-completion revival & SQLite lock upgrades
                 $affected = GameSession::where('id', $session->id)
+                    ->whereNotIn('status', ['paused', 'completed'])
                     ->where('current_question_index', $currentIndex)
                     ->where('state_version', $currentVersion)
                     ->update([
@@ -395,6 +446,22 @@ class SessionController extends Controller
 
                 if ($affected === 0) {
                     $session->refresh();
+                    if ($session->status === 'completed') {
+                        return response()->json([
+                            'error' => 'Session is already completed',
+                            'code' => 'SESSION_COMPLETED',
+                            'status' => 'completed',
+                            'current_question_index' => (int) $session->current_question_index,
+                            'state_version' => (int) $session->state_version,
+                            'server_now_ms' => (int) round(microtime(true) * 1000),
+                        ], 409);
+                    }
+                    if ($session->status === 'paused') {
+                        return response()->json([
+                            'error' => 'Cannot advance question while session is paused',
+                            'code' => 'INVALID_STATE',
+                        ], 422);
+                    }
                     return response()->json([
                         'status' => $session->status,
                         'current_question_index' => (int) $session->current_question_index,
@@ -405,21 +472,6 @@ class SessionController extends Controller
                         'server_now_ms' => (int) round(microtime(true) * 1000),
                     ]);
                 }
-
-                $nextQuestion = $allQuestions->get($nextIndex);
-                $formattedQ = $nextQuestion ? [
-                    'id' => $nextQuestion->id,
-                    'question_text' => $nextQuestion->question_text,
-                    'question_text_ar' => $nextQuestion->question_text_ar,
-                    'time_limit' => $nextQuestion->time_limit,
-                    'order' => $nextQuestion->order,
-                    'choices' => $nextQuestion->choices->map(fn ($c) => [
-                        'id' => $c->id,
-                        'choice_text' => $c->choice_text,
-                        'choice_text_ar' => $c->choice_text_ar,
-                        'order' => $c->order,
-                    ])->values()->all(),
-                ] : [];
 
                 DB::afterCommit(function () use ($session, $formattedQ, $nextIndex, $totalQuestions, $startedAt, $currentVersion) {
                     broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions, $startedAt, $currentVersion + 1));
@@ -450,7 +502,7 @@ class SessionController extends Controller
     // Teacher reveals the correct answer
     public function reveal(string $pin): JsonResponse
     {
-        return DB::transaction(function () use ($pin) {
+        try {
             $session = GameSession::where('pin', $pin)->firstOrFail();
 
             // M3.2: Reject if status is not active
@@ -475,89 +527,120 @@ class SessionController extends Controller
             }
 
             $currentVersion = (int) $session->state_version;
-            $session->update([
-                'question_state' => 'revealed',
-                'state_version' => $currentVersion + 1,
-            ]);
-
             $currentQuestion = $session->currentQuestion();
-            $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
-            $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
 
-            $leaderboard = $session->players()
-                ->orderByDesc('score')
-                ->take(12)
-                ->get(['id', 'name', 'avatar', 'score', 'streak'])
-                ->values()
-                ->map(function ($p, $index) {
-                    return [
-                        'rank' => $index + 1,
-                        'id' => $p->id,
-                        'name' => $p->name,
-                        'avatar' => $p->avatar,
-                        'score' => $p->score,
-                        'streak' => $p->streak,
-                    ];
-                })
-                ->all();
+            return DB::transaction(function () use ($session, $currentVersion, $currentQuestion) {
+                $affected = GameSession::where('id', $session->id)
+                    ->where('status', 'active')
+                    ->where('question_state', 'answering')
+                    ->where('state_version', $currentVersion)
+                    ->update([
+                        'question_state' => 'revealed',
+                        'state_version' => $currentVersion + 1,
+                    ]);
 
-            DB::afterCommit(function () use ($session, $correctChoiceId, $currentQuestion, $leaderboard) {
-                broadcast(new AnswerRevealed($session->pin, $correctChoiceId, $currentQuestion?->id));
-                broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
-            });
+                if ($affected === 0) {
+                    $session->refresh();
+                    $q = $session->currentQuestion();
+                    $correctChoice = $q?->choices()->where('is_correct', true)->first();
+                    return response()->json([
+                        'question_state' => $session->question_state,
+                        'correct_choice_id' => $correctChoice ? (int) $correctChoice->id : 0,
+                        'state_version' => (int) $session->state_version,
+                        'server_now_ms' => (int) round(microtime(true) * 1000),
+                    ]);
+                }
 
-            return response()->json([
-                'question_state' => 'revealed',
-                'correct_choice_id' => $correctChoiceId,
-                'state_version' => $currentVersion + 1,
-                'server_now_ms' => (int) round(microtime(true) * 1000),
-            ]);
-        });
+                if ($currentQuestion) {
+                    $currentQuestion->update(['is_revealed' => true]);
+                }
+                $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
+                $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
+                $newVersion = $currentVersion + 1;
+
+                $leaderboard = $session->players()
+                    ->orderByDesc('score')
+                    ->orderBy('id', 'asc')
+                    ->take(12)
+                    ->get(['id', 'name', 'avatar', 'score', 'streak'])
+                    ->values()
+                    ->map(function ($p, $index) {
+                        return [
+                            'rank' => $index + 1,
+                            'id' => $p->id,
+                            'name' => $p->name,
+                            'avatar' => $p->avatar,
+                            'score' => $p->score,
+                            'streak' => $p->streak,
+                        ];
+                    })
+                    ->all();
+
+                DB::afterCommit(function () use ($session, $correctChoiceId, $currentQuestion, $newVersion, $leaderboard) {
+                    broadcast(new AnswerRevealed($session->pin, $correctChoiceId, $currentQuestion?->id, $newVersion));
+                    broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
+                });
+
+                return response()->json([
+                    'question_state' => 'revealed',
+                    'correct_choice_id' => $correctChoiceId,
+                    'state_version' => $newVersion,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }, 5);
+        } catch (\Illuminate\Database\QueryException $e) {
+            if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
+            }
+            throw $e;
+        }
     }
 
     // Teacher pauses
     public function pause(string $pin): JsonResponse
     {
         try {
-            return DB::transaction(function () use ($pin) {
-                $session = GameSession::where('pin', $pin)->firstOrFail();
+            $session = GameSession::where('pin', $pin)->firstOrFail();
 
-                // Idempotent: repeated pause requests must not recalculate or destroy saved remaining time
-                if ($session->status === 'paused') {
-                    return response()->json([
-                        'status' => 'paused',
-                        'question_paused_remaining_ms' => $session->question_paused_remaining_ms,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
+            // Idempotent: repeated pause requests must not recalculate or destroy saved remaining time
+            if ($session->status === 'paused') {
+                return response()->json([
+                    'status' => 'paused',
+                    'question_paused_remaining_ms' => $session->question_paused_remaining_ms,
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
+
+            // Only active sessions can be paused
+            if ($session->status !== 'active') {
+                return response()->json([
+                    'error' => 'Session is not active to pause',
+                    'code' => 'INVALID_STATE',
+                ], 422);
+            }
+
+            $nowMs = (int) round(microtime(true) * 1000);
+            $currentQuestion = $session->currentQuestion();
+            $durationMs = ($currentQuestion?->time_limit ?: 20) * 1000;
+
+            $remainingMs = $durationMs;
+            if ($session->question_started_at !== null) {
+                if ($nowMs < $session->question_started_at) {
+                    $remainingLeadMs = max(1, $session->question_started_at - $nowMs);
+                    $remainingMs = $durationMs + $remainingLeadMs;
+                } else {
+                    $elapsedMs = max(0, $nowMs - $session->question_started_at);
+                    $remainingMs = max(0, $durationMs - $elapsedMs);
                 }
+            }
 
-                // Only active sessions can be paused
-                if ($session->status !== 'active') {
-                    return response()->json([
-                        'error' => 'Session is not active to pause',
-                        'code' => 'INVALID_STATE',
-                    ], 422);
-                }
+            $currentVersion = (int) $session->state_version;
 
-                $nowMs = (int) round(microtime(true) * 1000);
-                $currentQuestion = $session->currentQuestion();
-                $durationMs = ($currentQuestion?->time_limit ?: 20) * 1000;
-
-                $remainingMs = $durationMs;
-                if ($session->question_started_at !== null) {
-                    if ($nowMs < $session->question_started_at) {
-                        // Paused during the 2-second synchronization lead period!
-                        // Full duration is preserved; flag lead period by adding remaining lead
-                        $remainingLeadMs = max(1, $session->question_started_at - $nowMs);
-                        $remainingMs = $durationMs + $remainingLeadMs;
-                    } else {
-                        $elapsedMs = max(0, $nowMs - $session->question_started_at);
-                        $remainingMs = max(0, $durationMs - $elapsedMs);
-                    }
-                }
-
-                $currentVersion = (int) $session->state_version;
+            return DB::transaction(function () use ($session, $currentVersion, $remainingMs) {
                 $affected = GameSession::where('id', $session->id)
                     ->where('status', 'active')
                     ->where('state_version', $currentVersion)
@@ -603,44 +686,43 @@ class SessionController extends Controller
     public function resume(string $pin): JsonResponse
     {
         try {
-            return DB::transaction(function () use ($pin) {
-                $session = GameSession::where('pin', $pin)->firstOrFail();
+            $session = GameSession::where('pin', $pin)->firstOrFail();
 
-                // Idempotent: repeated resume requests must not restart or extend the timer
-                if ($session->status === 'active') {
-                    return response()->json([
-                        'status' => 'active',
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
+            // Idempotent: repeated resume requests must not restart or extend the timer
+            if ($session->status === 'active') {
+                return response()->json([
+                    'status' => 'active',
+                    'question_started_at' => $session->question_started_at,
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
+
+            // Only paused sessions can be resumed
+            if ($session->status !== 'paused') {
+                return response()->json([
+                    'error' => 'Session is not paused to resume',
+                    'code' => 'INVALID_STATE',
+                ], 422);
+            }
+
+            $nowMs = (int) round(microtime(true) * 1000);
+            $currentQuestion = $session->currentQuestion();
+            $durationMs = ($currentQuestion?->time_limit ?: 20) * 1000;
+            $leadMs = config('quiz.sync_lead_ms', 2000);
+
+            $newStartedAt = $session->question_started_at;
+            if ($session->question_paused_remaining_ms !== null) {
+                if ($session->question_paused_remaining_ms > $durationMs) {
+                    $newStartedAt = $nowMs + $leadMs;
+                } else {
+                    $newStartedAt = $nowMs - ($durationMs - $session->question_paused_remaining_ms);
                 }
+            }
 
-                // Only paused sessions can be resumed
-                if ($session->status !== 'paused') {
-                    return response()->json([
-                        'error' => 'Session is not paused to resume',
-                        'code' => 'INVALID_STATE',
-                    ], 422);
-                }
+            $currentVersion = (int) $session->state_version;
 
-                $nowMs = (int) round(microtime(true) * 1000);
-                $currentQuestion = $session->currentQuestion();
-                $durationMs = ($currentQuestion?->time_limit ?: 20) * 1000;
-                $leadMs = config('quiz.sync_lead_ms', 2000);
-
-                $newStartedAt = $session->question_started_at;
-                if ($session->question_paused_remaining_ms !== null) {
-                    if ($session->question_paused_remaining_ms > $durationMs) {
-                        // Paused during synchronization lead period: resume with synchronization lead!
-                        $newStartedAt = $nowMs + $leadMs;
-                    } else {
-                        // Paused during answering phase: resume preserving exact remaining duration
-                        $newStartedAt = $nowMs - ($durationMs - $session->question_paused_remaining_ms);
-                    }
-                }
-
-                $currentVersion = (int) $session->state_version;
+            return DB::transaction(function () use ($session, $currentVersion, $newStartedAt) {
                 $affected = GameSession::where('id', $session->id)
                     ->where('status', 'paused')
                     ->where('state_version', $currentVersion)
@@ -686,59 +768,160 @@ class SessionController extends Controller
     // Teacher ends game
     public function end(string $pin): JsonResponse
     {
-        return DB::transaction(function () use ($pin) {
+        try {
+            // Read outside transaction to avoid SQLite lock promotion
             $session = GameSession::where('pin', $pin)->firstOrFail();
+
+            // Idempotent: if already completed, return current state without re-broadcasting
+            if ($session->status === 'completed') {
+                return response()->json([
+                    'status' => 'completed',
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
+
             $currentVersion = (int) $session->state_version;
-            $session->update([
-                'status' => 'completed',
-                'question_state' => 'revealed',
-                'question_started_at' => null,
-                'question_paused_remaining_ms' => null,
-                'state_version' => $currentVersion + 1,
-            ]);
+            $currentQuestion = $session->currentQuestion();
 
-            DB::afterCommit(function () use ($session) {
-                broadcast(new GameFinished($session->pin));
-            });
+            return DB::transaction(function () use ($session, $currentVersion, $currentQuestion) {
+                // Write-first: conditional UPDATE with status + version guard
+                $affected = DB::table('game_sessions')
+                    ->where('id', $session->id)
+                    ->whereIn('status', ['waiting', 'active', 'paused'])
+                    ->where('state_version', $currentVersion)
+                    ->update([
+                        'status' => 'completed',
+                        'question_state' => 'revealed',
+                        'question_started_at' => null,
+                        'question_paused_remaining_ms' => null,
+                        'state_version' => $currentVersion + 1,
+                        'updated_at' => now(),
+                    ]);
 
-            return response()->json([
-                'status' => 'completed',
-                'state_version' => $currentVersion + 1,
-                'server_now_ms' => (int) round(microtime(true) * 1000),
-            ]);
-        });
+                if ($affected === 0) {
+                    // Losing concurrent request: refresh and return authoritative current state without broadcasting
+                    $session->refresh();
+                    $statusCode = ($session->status === 'completed') ? 200 : 409;
+                    return response()->json([
+                        'status' => $session->status,
+                        'state_version' => (int) $session->state_version,
+                        'code' => $session->status === 'completed' ? null : 'VERSION_CONFLICT',
+                        'server_now_ms' => (int) round(microtime(true) * 1000),
+                    ], $statusCode);
+                }
+
+                if ($currentQuestion) {
+                    $currentQuestion->update(['is_revealed' => true]);
+                }
+
+                $newVersion = $currentVersion + 1;
+                DB::afterCommit(function () use ($session, $newVersion, $currentQuestion) {
+                    broadcast(new GameFinished($session->pin, $newVersion, $currentQuestion?->id));
+                });
+
+                return response()->json([
+                    'status' => 'completed',
+                    'state_version' => $newVersion,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }, 5);
+        } catch (\Illuminate\Database\QueryException $e) {
+            if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
+            }
+            throw $e;
+        }
     }
 
     // Teacher resets session to play again
     public function reset(string $pin): JsonResponse
     {
-        $session = GameSession::where('pin', $pin)->firstOrFail();
+        try {
+            // Read outside transaction to avoid SQLite lock promotion
+            $session = GameSession::where('pin', $pin)->firstOrFail();
 
-        DB::transaction(function () use ($session) {
-            $playerIds = $session->players()->pluck('id');
-            \App\Models\Answer::whereIn('player_id', $playerIds)->delete();
-            $session->players()->delete();
-            $session->update([
-                'status' => 'waiting',
-                'current_question_index' => 0,
-                'question_state' => 'answering',
-                'question_started_at' => null,
-                'question_paused_remaining_ms' => null,
-                'state_version' => $session->state_version + 1,
-            ]);
+            // Idempotent fast-path: if already cleanly in waiting state with no players
+            if (
+                $session->status === 'waiting' &&
+                (int) $session->current_question_index === 0 &&
+                $session->question_state === 'answering' &&
+                $session->players()->count() === 0
+            ) {
+                return response()->json([
+                    'status' => 'waiting',
+                    'message' => 'Session is already in waiting state',
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
 
-            DB::afterCommit(function () use ($session) {
-                broadcast(new SessionReset($session->pin));
-            });
-        });
+            $currentVersion = (int) $session->state_version;
 
-        return response()->json([
-            'status' => 'waiting',
-            'message' => 'Session reset successfully',
-            'session' => $session,
-            'state_version' => $session->state_version,
-            'server_now_ms' => (int) round(microtime(true) * 1000),
-        ]);
+            return DB::transaction(function () use ($session, $currentVersion) {
+                // Write-first: conditional UPDATE MUST be first SQL statement to acquire SQLite RESERVED lock immediately
+                $affected = DB::table('game_sessions')
+                    ->where('id', $session->id)
+                    ->where('state_version', $currentVersion)
+                    ->update([
+                        'status' => 'waiting',
+                        'current_question_index' => 0,
+                        'question_state' => 'answering',
+                        'question_started_at' => null,
+                        'question_paused_remaining_ms' => null,
+                        'state_version' => $currentVersion + 1,
+                        'updated_at' => now(),
+                    ]);
+
+                if ($affected === 0) {
+                    // Losing concurrent request: return authoritative current state without modifying data or broadcasting
+                    $session->refresh();
+                    $statusCode = ($session->status === 'waiting') ? 200 : 409;
+                    return response()->json([
+                        'status' => $session->status,
+                        'message' => 'Session was modified by another request',
+                        'state_version' => (int) $session->state_version,
+                        'code' => $session->status === 'waiting' ? null : 'VERSION_CONFLICT',
+                        'server_now_ms' => (int) round(microtime(true) * 1000),
+                    ], $statusCode);
+                }
+
+                // Now safe to query & delete related records: we already hold the exclusive SQLite write lock
+                $playerIds = DB::table('players')
+                    ->where('game_session_id', $session->id)
+                    ->pluck('id')
+                    ->toArray();
+
+                if (!empty($playerIds)) {
+                    \App\Models\Answer::whereIn('player_id', $playerIds)->delete();
+                }
+                DB::table('players')->where('game_session_id', $session->id)->delete();
+                DB::table('questions')->where('game_session_id', $session->id)->update(['is_revealed' => false]);
+
+                $newVersion = $currentVersion + 1;
+                DB::afterCommit(function () use ($session, $newVersion) {
+                    broadcast(new SessionReset($session->pin, $newVersion));
+                });
+
+                return response()->json([
+                    'status' => 'waiting',
+                    'message' => 'Session reset successfully',
+                    'state_version' => $newVersion,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }, 5);
+        } catch (\Illuminate\Database\QueryException $e) {
+            if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
+            }
+            throw $e;
+        }
     }
 
     // Helper to serialize session state consistently
@@ -766,7 +949,7 @@ class SessionController extends Controller
             'total_questions' => $totalQuestions,
             'player_count' => $session->players()->count(),
             'timestamp' => now()->toISOString(),
-            'leaderboard' => $session->players()->orderByDesc('score')->take(12)->get(['id', 'name', 'avatar', 'score', 'streak'])->values()->map(function ($player, $index) {
+            'leaderboard' => $session->players()->orderByDesc('score')->orderBy('id', 'asc')->take(12)->get(['id', 'name', 'avatar', 'score', 'streak'])->values()->map(function ($player, $index) {
                 return [
                     'rank' => $index + 1,
                     'id' => $player->id,
@@ -798,9 +981,7 @@ class SessionController extends Controller
     // Get authenticated player state (reconnection / tab switch)
     public function me(Request $request, string $pin): JsonResponse
     {
-        $token = $request->header('X-Player-Token')
-            ?: $request->bearerToken()
-            ?: $request->query('player_token');
+        $token = $request->header('X-Player-Token');
 
         if (!$token) {
             return response()->json([
@@ -836,6 +1017,7 @@ class SessionController extends Controller
             if ($answerRecord) {
                 $hasAnswered = true;
                 $answer = [
+                    'question_id' => $currentQuestion->id,
                     'choice_id' => $answerRecord->choice_id,
                 ];
                 if ($session->question_state === 'revealed') {
@@ -856,6 +1038,7 @@ class SessionController extends Controller
                 'streak' => (int) $player->streak,
             ],
             'session' => $sessionData,
+            'question_id' => $currentQuestion?->id,
             'answered' => $hasAnswered,
             'answer' => $answer,
             'server_now_ms' => (int) round(microtime(true) * 1000),

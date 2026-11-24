@@ -16,13 +16,23 @@ class GameStarted implements ShouldBroadcastNow
     public ?array $question;
     public int $totalQuestions;
     public int $currentQuestionIndex;
+    public ?int $questionStartedAt;
+    public int $stateVersion;
 
-    public function __construct(string $pin, ?array $question = null, int $totalQuestions = 0, int $currentQuestionIndex = 0)
-    {
+    public function __construct(
+        string $pin,
+        ?array $question = null,
+        int $totalQuestions = 0,
+        int $currentQuestionIndex = 0,
+        ?int $questionStartedAt = null,
+        int $stateVersion = 0
+    ) {
         $this->pin = $pin;
         $this->question = $question;
         $this->totalQuestions = $totalQuestions;
         $this->currentQuestionIndex = $currentQuestionIndex;
+        $this->questionStartedAt = $questionStartedAt;
+        $this->stateVersion = $stateVersion;
     }
 
     public function broadcastOn(): array
@@ -46,6 +56,8 @@ class GameStarted implements ShouldBroadcastNow
             'question_state' => 'answering',
             'question' => $this->question,
             'total_questions' => $this->totalQuestions,
+            'question_started_at' => $this->questionStartedAt,
+            'state_version' => $this->stateVersion,
             '_ts' => (int) round(microtime(true) * 1000),
         ];
     }

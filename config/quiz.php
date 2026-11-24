@@ -7,4 +7,6 @@ return [
     'reveal_on_answer' => (bool) env('QUIZ_REVEAL_ON_ANSWER', false),
     'max_players_per_session' => (int) env('QUIZ_MAX_PLAYERS_PER_SESSION', 100),
     'max_questions' => (int) env('QUIZ_MAX_QUESTIONS', 50),
+    'teacher_access_key' => env('TEACHER_ACCESS_KEY'),
+    'teacher_token_ttl' => (int) env('TEACHER_TOKEN_TTL_SECONDS', 28800),
 ];

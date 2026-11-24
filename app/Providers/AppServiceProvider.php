@@ -28,6 +28,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by($request->ip());
         });
 
+        RateLimiter::for('api.auth', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
+
         RateLimiter::for('api.pin', function (Request $request) {
             $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
             return Limit::perMinute(120)->by($pin . '|' . $request->ip());
@@ -40,11 +44,9 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('api.answer', function (Request $request) {
             $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
-            // Rate limit answers by pin + player token/id so classroom students sharing NAT IP are not throttled
-            $playerKey = $request->header('X-Player-Token')
-                ?? $request->input('player_token')
-                ?? $request->input('player_id')
-                ?? $request->ip();
+            // Rate limit answers by pin + player token so classroom students sharing NAT IP are not throttled
+            // S1.4: header-only token extraction — never read token from query/body
+            $playerKey = $request->header('X-Player-Token') ?? $request->ip();
 
             return Limit::perMinute(30)->by($pin . '|' . $playerKey);
         });
