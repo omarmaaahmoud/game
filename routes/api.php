@@ -33,3 +33,20 @@ Route::get('/sessions/{pin}/results', [GameController::class, 'results']);
 // Polling & state synchronization
 Route::get('/sessions/{pin}/poll', [SessionController::class, 'poll']);
 Route::get('/sessions/{pin}/state', [SessionController::class, 'state']);
+
+// Health check endpoint (O2)
+Route::get('/health', function () {
+    $dbOk = false;
+    try {
+        \Illuminate\Support\Facades\DB::connection()->getPdo();
+        $dbOk = true;
+    } catch (\Throwable $e) {
+        $dbOk = false;
+    }
+
+    return response()->json([
+        'status' => $dbOk ? 'ok' : 'degraded',
+        'database' => $dbOk ? 'connected' : 'error',
+        'server_now_ms' => (int) round(microtime(true) * 1000),
+    ], $dbOk ? 200 : 503);
+});
