@@ -6913,6 +6913,38 @@ html, body {
   left: -12px;
 }
 
+/* Purple Wavy Decoration Layers */
+.td-wave-deco {
+  position: absolute;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 40% 60% 55% 45% / 55% 40% 60% 45%;
+}
+.td-wave-1 {
+  width: 420px;
+  height: 340px;
+  bottom: -40px;
+  right: -80px;
+  background: linear-gradient(135deg, rgba(167, 139, 250, 0.22) 0%, rgba(124, 58, 237, 0.10) 60%, transparent 100%);
+  border-radius: 42% 58% 48% 52% / 54% 46% 54% 46%;
+}
+.td-wave-2 {
+  width: 300px;
+  height: 240px;
+  bottom: 20px;
+  right: -30px;
+  background: linear-gradient(160deg, rgba(139, 92, 246, 0.18) 0%, rgba(109, 40, 217, 0.08) 70%, transparent 100%);
+  border-radius: 55% 45% 52% 48% / 48% 52% 48% 52%;
+}
+.td-wave-3 {
+  width: 220px;
+  height: 180px;
+  top: 30px;
+  left: -60px;
+  background: linear-gradient(200deg, rgba(167, 139, 250, 0.14) 0%, rgba(196, 181, 253, 0.08) 80%, transparent 100%);
+  border-radius: 48% 52% 60% 40% / 50% 55% 45% 50%;
+}
+
 .td-hero-grid {
   position: relative;
   z-index: 1;

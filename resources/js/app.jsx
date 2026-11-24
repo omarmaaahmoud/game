@@ -1179,6 +1179,9 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
     <main className="teacher-dashboard-layout td-studio-shell">
       <div className="td-dot-grid td-dot-right" aria-hidden="true" />
       <div className="td-dot-grid td-dot-left" aria-hidden="true" />
+      <div className="td-wave-deco td-wave-1" aria-hidden="true" />
+      <div className="td-wave-deco td-wave-2" aria-hidden="true" />
+      <div className="td-wave-deco td-wave-3" aria-hidden="true" />
 
       <div className="td-hero-grid">
         {/* Right Column (RTL Main Controls) */}
