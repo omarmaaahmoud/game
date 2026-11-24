@@ -7194,11 +7194,11 @@ html, body {
 
 .td-books-trophy-img {
   width: 100%;
-  max-width: 410px;
+  max-width: 420px;
   height: auto;
   display: block;
-  mix-blend-mode: multiply;
-  filter: drop-shadow(0 24px 32px rgba(91, 33, 182, 0.14));
+  background: transparent;
+  filter: drop-shadow(0 22px 28px rgba(91, 33, 182, 0.16));
   animation: tdFloatGentle 5.5s ease-in-out infinite;
 }
 

@@ -1267,11 +1267,8 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
         {/* Left Column (3D Books & Trophy Illustration) */}
         <div className="td-art-col">
           <div className="td-art-stage">
-            <span className="td-float-star td-star-1" aria-hidden="true">★</span>
-            <span className="td-float-star td-star-2" aria-hidden="true">★</span>
-            <span className="td-float-star td-star-3" aria-hidden="true">★</span>
             <img
-              src="/images/teacher-books-trophy.jpg"
+              src="/images/teacher-books-trophy.png"
               alt="كأس التفوق وكتب المسابقات التعليمية"
               className="td-books-trophy-img"
             />
