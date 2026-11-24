@@ -9,6 +9,7 @@ Route::post('/sessions', [SessionController::class, 'store'])->middleware('throt
 Route::get('/sessions/{pin}', [SessionController::class, 'show'])->middleware('throttle:api.pin');
 Route::post('/sessions/{pin}/join', [SessionController::class, 'join'])->middleware('throttle:api.join');
 Route::get('/sessions/{pin}/players', [SessionController::class, 'players']);
+Route::get('/sessions/{pin}/me', [SessionController::class, 'me']);
 
 // Teacher controls (protected by teacher token)
 Route::middleware('teacher.auth')->group(function () {

@@ -269,7 +269,9 @@ class SessionController extends Controller
 
                 $totalQuestions = $session->questions()->count();
 
-                broadcast(new GameStarted($session->pin, $formattedQ, $totalQuestions, 0));
+                DB::afterCommit(function () use ($session, $formattedQ, $totalQuestions) {
+                    broadcast(new GameStarted($session->pin, $formattedQ, $totalQuestions, 0));
+                });
 
                 return response()->json([
                     'status' => 'active',
@@ -365,7 +367,10 @@ class SessionController extends Controller
                         ]);
                     }
 
-                    broadcast(new GameFinished($session->pin));
+                    DB::afterCommit(function () use ($session) {
+                        broadcast(new GameFinished($session->pin));
+                    });
+
                     return response()->json([
                         'status' => 'completed',
                         'message' => 'All questions done',
@@ -418,7 +423,9 @@ class SessionController extends Controller
                     ])->values()->all(),
                 ] : [];
 
-                broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions, $startedAt, $currentVersion + 1));
+                DB::afterCommit(function () use ($session, $formattedQ, $nextIndex, $totalQuestions, $startedAt, $currentVersion) {
+                    broadcast(new QuestionChanged($session->pin, $formattedQ, $nextIndex, $totalQuestions, $startedAt, $currentVersion + 1));
+                });
 
                 return response()->json([
                     'status' => 'active',
@@ -454,43 +461,61 @@ class SessionController extends Controller
     // Teacher reveals the correct answer
     public function reveal(string $pin): JsonResponse
     {
-        $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update([
-            'question_state' => 'revealed',
-            'state_version' => $session->state_version + 1,
-        ]);
+        return DB::transaction(function () use ($pin) {
+            $session = GameSession::where('pin', $pin)->firstOrFail();
 
-        $currentQuestion = $session->currentQuestion();
-        $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
-        $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
+            // Idempotent: if already revealed, return current state
+            if ($session->question_state === 'revealed') {
+                $currentQuestion = $session->currentQuestion();
+                $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
+                $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
+                return response()->json([
+                    'question_state' => 'revealed',
+                    'correct_choice_id' => $correctChoiceId,
+                    'state_version' => (int) $session->state_version,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
 
-        broadcast(new AnswerRevealed($session->pin, $correctChoiceId, $currentQuestion?->id));
+            $currentVersion = (int) $session->state_version;
+            $session->update([
+                'question_state' => 'revealed',
+                'state_version' => $currentVersion + 1,
+            ]);
 
-        $leaderboard = $session->players()
-            ->orderByDesc('score')
-            ->take(12)
-            ->get(['id', 'name', 'avatar', 'score', 'streak'])
-            ->values()
-            ->map(function ($p, $index) {
-                return [
-                    'rank' => $index + 1,
-                    'id' => $p->id,
-                    'name' => $p->name,
-                    'avatar' => $p->avatar,
-                    'score' => $p->score,
-                    'streak' => $p->streak,
-                ];
-            })
-            ->all();
+            $currentQuestion = $session->currentQuestion();
+            $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
+            $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
 
-        broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
+            $leaderboard = $session->players()
+                ->orderByDesc('score')
+                ->take(12)
+                ->get(['id', 'name', 'avatar', 'score', 'streak'])
+                ->values()
+                ->map(function ($p, $index) {
+                    return [
+                        'rank' => $index + 1,
+                        'id' => $p->id,
+                        'name' => $p->name,
+                        'avatar' => $p->avatar,
+                        'score' => $p->score,
+                        'streak' => $p->streak,
+                    ];
+                })
+                ->all();
 
-        return response()->json([
-            'question_state' => 'revealed',
-            'correct_choice_id' => $correctChoiceId,
-            'state_version' => $session->state_version,
-            'server_now_ms' => (int) round(microtime(true) * 1000),
-        ]);
+            DB::afterCommit(function () use ($session, $correctChoiceId, $currentQuestion, $leaderboard) {
+                broadcast(new AnswerRevealed($session->pin, $correctChoiceId, $currentQuestion?->id));
+                broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
+            });
+
+            return response()->json([
+                'question_state' => 'revealed',
+                'correct_choice_id' => $correctChoiceId,
+                'state_version' => $currentVersion + 1,
+                'server_now_ms' => (int) round(microtime(true) * 1000),
+            ]);
+        });
     }
 
     // Teacher pauses
@@ -666,22 +691,27 @@ class SessionController extends Controller
     // Teacher ends game
     public function end(string $pin): JsonResponse
     {
-        $session = GameSession::where('pin', $pin)->firstOrFail();
-        $session->update([
-            'status' => 'completed',
-            'question_state' => 'revealed',
-            'question_started_at' => null,
-            'question_paused_remaining_ms' => null,
-            'state_version' => $session->state_version + 1,
-        ]);
+        return DB::transaction(function () use ($pin) {
+            $session = GameSession::where('pin', $pin)->firstOrFail();
+            $currentVersion = (int) $session->state_version;
+            $session->update([
+                'status' => 'completed',
+                'question_state' => 'revealed',
+                'question_started_at' => null,
+                'question_paused_remaining_ms' => null,
+                'state_version' => $currentVersion + 1,
+            ]);
 
-        broadcast(new GameFinished($session->pin));
+            DB::afterCommit(function () use ($session) {
+                broadcast(new GameFinished($session->pin));
+            });
 
-        return response()->json([
-            'status' => 'completed',
-            'state_version' => $session->state_version,
-            'server_now_ms' => (int) round(microtime(true) * 1000),
-        ]);
+            return response()->json([
+                'status' => 'completed',
+                'state_version' => $currentVersion + 1,
+                'server_now_ms' => (int) round(microtime(true) * 1000),
+            ]);
+        });
     }
 
     // Teacher resets session to play again
@@ -701,10 +731,11 @@ class SessionController extends Controller
                 'question_paused_remaining_ms' => null,
                 'state_version' => $session->state_version + 1,
             ]);
-        });
 
-        // Broadcast after commit
-        broadcast(new SessionReset($session->pin));
+            DB::afterCommit(function () use ($session) {
+                broadcast(new SessionReset($session->pin));
+            });
+        });
 
         return response()->json([
             'status' => 'waiting',
@@ -718,7 +749,7 @@ class SessionController extends Controller
     // Helper to serialize session state consistently
     private function serializeSessionState(GameSession $session): array
     {
-        $allQuestions = $session->questions;
+        $allQuestions = $session->questions()->with(['choices' => fn($q) => $q->orderBy('order')])->orderBy('order')->get();
         $totalQuestions = $allQuestions->count();
         $currentQuestion = $allQuestions->get($session->current_question_index);
 
@@ -728,6 +759,9 @@ class SessionController extends Controller
             : null;
 
         return [
+            'id' => $session->id,
+            'pin' => $session->pin,
+            'title' => $session->title,
             'status' => $session->status,
             'current_question_index' => (int) $session->current_question_index,
             'question_state' => $session->question_state ?? 'answering',
@@ -735,9 +769,9 @@ class SessionController extends Controller
             'state_version' => (int) ($session->state_version ?? 0),
             'question_paused_remaining_ms' => $pausedRemaining,
             'total_questions' => $totalQuestions,
-            'player_count' => $session->players->count(),
+            'player_count' => $session->players()->count(),
             'timestamp' => now()->toISOString(),
-            'leaderboard' => $session->players->sortByDesc('score')->values()->take(12)->map(function ($player, $index) {
+            'leaderboard' => $session->players()->orderByDesc('score')->take(12)->get(['id', 'name', 'avatar', 'score', 'streak'])->values()->map(function ($player, $index) {
                 return [
                     'rank' => $index + 1,
                     'id' => $player->id,
@@ -764,6 +798,73 @@ class SessionController extends Controller
                 ])->values()->all(),
             ] : null,
         ];
+    }
+
+    // Get authenticated player state (reconnection / tab switch)
+    public function me(Request $request, string $pin): JsonResponse
+    {
+        $token = $request->header('X-Player-Token')
+            ?: $request->bearerToken()
+            ?: $request->query('player_token');
+
+        if (!$token) {
+            return response()->json([
+                'error' => 'Player token is required',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 401);
+        }
+
+        $session = GameSession::where('pin', $pin)->first();
+        if (!$session) {
+            return response()->json([
+                'error' => 'Session not found',
+                'code' => 'NOT_FOUND',
+            ], 404);
+        }
+
+        $tokenHash = hash('sha256', $token);
+        $player = $session->players()->where('token_hash', $tokenHash)->first();
+        if (!$player) {
+            return response()->json([
+                'error' => 'Invalid player token',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $currentQuestion = $session->currentQuestion();
+        $answer = null;
+        $hasAnswered = false;
+        if ($currentQuestion) {
+            $answerRecord = \App\Models\Answer::where('player_id', $player->id)
+                ->where('question_id', $currentQuestion->id)
+                ->first();
+            if ($answerRecord) {
+                $hasAnswered = true;
+                $answer = [
+                    'choice_id' => $answerRecord->choice_id,
+                ];
+                if ($session->question_state === 'revealed') {
+                    $answer['is_correct'] = (bool) $answerRecord->is_correct;
+                    $answer['points_earned'] = (int) $answerRecord->points_earned;
+                }
+            }
+        }
+
+        $sessionData = $this->serializeSessionState($session);
+
+        return response()->json([
+            'player' => [
+                'id' => $player->id,
+                'name' => $player->name,
+                'avatar' => $player->avatar,
+                'score' => (int) $player->score,
+                'streak' => (int) $player->streak,
+            ],
+            'session' => $sessionData,
+            'answered' => $hasAnswered,
+            'answer' => $answer,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
+        ]);
     }
 
     // Polling endpoint (Fast eager loading for snappy realtime response)

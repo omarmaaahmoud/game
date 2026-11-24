@@ -192,6 +192,7 @@ function savePlayerAuth(pin, player, token) {
     const data = JSON.stringify({ id: player.id, token, name: player.name });
     sessionStorage.setItem(`tecorbi_player_${pin}`, data);
     localStorage.setItem(`tecorbi_player_${pin}`, data);
+    localStorage.setItem('tecorbi_last_session_pin', pin);
   } catch {}
 }
 
@@ -211,6 +212,9 @@ function clearPlayerAuth(pin) {
   try {
     sessionStorage.removeItem(`tecorbi_player_${pin}`);
     localStorage.removeItem(`tecorbi_player_${pin}`);
+    if (localStorage.getItem('tecorbi_last_session_pin') === pin) {
+      localStorage.removeItem('tecorbi_last_session_pin');
+    }
   } catch {}
 }
 
@@ -664,6 +668,31 @@ function App() {
     const t = setTimeout(() => setNotice(''), 3200);
     return () => clearTimeout(t);
   }, [notice]);
+
+  // R2.7: Reconnect on boot / refresh if player session is saved in storage
+  useEffect(() => {
+    const savedPin = localStorage.getItem('tecorbi_last_session_pin');
+    if (!savedPin) return;
+    const auth = getPlayerAuth(savedPin);
+    if (!auth || !auth.token) return;
+
+    playerGet(savedPin, `/sessions/${savedPin}/me`, auth.token)
+      .then(data => {
+        if (!data || !data.player || !data.session) return;
+        setSession(data.session);
+        setPlayer({ ...data.player, token: auth.token });
+        if (data.session.status === 'active') {
+          setMode('student-play');
+        } else if (data.session.status === 'waiting') {
+          setMode('student-lobby');
+        } else if (data.session.status === 'completed') {
+          setMode('leaderboard');
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('tecorbi_last_session_pin');
+      });
+  }, []);
 
   // Restore teacher token from storage if session exists
   useEffect(() => {
@@ -2123,6 +2152,8 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
 function StudentLobby({ session, setMode, player }) {
   const [players, setPlayers] = useState([]);
   const prevCount = useRef(0);
+  const inFlightRef = useRef(false);
+  const pollTimerRef = useRef(null);
 
   const pollPlayers = useCallback(async () => {
     if (!session?.pin) return;
@@ -2139,10 +2170,16 @@ function StudentLobby({ session, setMode, player }) {
 
   useEffect(() => {
     let isMounted = true;
-    let timer = null;
 
-    const check = async () => {
+    const schedule = (delay = 1000) => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
       if (!isMounted) return;
+      pollTimerRef.current = setTimeout(runPoll, delay);
+    };
+
+    const runPoll = async () => {
+      if (!isMounted || inFlightRef.current) return;
+      inFlightRef.current = true;
       try {
         const [stateData] = await Promise.all([
           get(`/sessions/${session.pin}/state`),
@@ -2154,16 +2191,19 @@ function StudentLobby({ session, setMode, player }) {
           setMode('student-play');
           return;
         }
-      } catch {}
-      if (isMounted) {
-        timer = setTimeout(check, 1000); // 1000ms in lobby
+      } catch {} finally {
+        inFlightRef.current = false;
+        if (isMounted) {
+          schedule(1000);
+        }
       }
     };
-    check();
+
+    runPoll();
 
     const onVisibility = () => {
-      if (!document.hidden && isMounted) {
-        check();
+      if (!document.hidden && isMounted && !inFlightRef.current) {
+        schedule(0);
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -2183,13 +2223,15 @@ function StudentLobby({ session, setMode, player }) {
           });
         }
       },
-    }, check);
+    }, () => {
+      if (isMounted && !inFlightRef.current) schedule(0);
+    });
 
     return () => {
       isMounted = false;
       document.removeEventListener('visibilitychange', onVisibility);
       unsubscribe();
-      if (timer) clearTimeout(timer);
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
   }, [session, setMode, pollPlayers]);
 
@@ -2271,6 +2313,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   const [selected, setSelected] = useState(null);
   const [pendingResult, setPendingResult] = useState(null);
   const [isRevealed, setIsRevealed] = useState(false);
+  const [isTimeUp, setIsTimeUp] = useState(false);
   const [timerDisplay, setTimerDisplay] = useState(20);
   const [isLeadPeriod, setIsLeadPeriod] = useState(false);
   const [gameStatus, setGameStatus] = useState('active');
@@ -2286,16 +2329,24 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
   const questionStartedAtRef = useRef(null);
   const timeLimitRef = useRef(20);
   const currentVersionRef = useRef(0);
+  const lastProcessedVersionRef = useRef(0);
   const preDeadlinePolledRef = useRef(false);
   const lastSoundTickRef = useRef(null);
 
   const playedSound = useRef(false);
   const midBoardTimer = useRef(null);
+  const myResultRetryTimer = useRef(null);
   const pendingResultRef = useRef(null);
   const submittingRef = useRef(false);
   const pendingPromiseRef = useRef(null);
   const isRevealedRef = useRef(isRevealed);
   isRevealedRef.current = isRevealed;
+  const isTimeUpRef = useRef(isTimeUp);
+  isTimeUpRef.current = isTimeUp;
+  const questionRef = useRef(question);
+  questionRef.current = question;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
   const playerRef = useRef(player);
   playerRef.current = player;
   const gameStatusRef = useRef(gameStatus);
@@ -2318,12 +2369,13 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 
   const handleNewQuestion = useCallback((qData, qIdx, totalCount, startedAt = null, version = 0) => {
     if (!qData) return;
-    const isNew = qData.id !== lastQId.current || qIdx !== qIndexRef.current;
-    if (!isNew && version && currentVersionRef.current && version < currentVersionRef.current) {
-      return; // Ignore stale version only if it's the exact same question
+    const numVersion = Number(version || 0);
+    if (numVersion > 0 && numVersion <= lastProcessedVersionRef.current) {
+      return; // Drop stale or duplicate state version (R2.2)
     }
-    if (version) {
-      currentVersionRef.current = version;
+    if (numVersion > 0) {
+      lastProcessedVersionRef.current = numVersion;
+      currentVersionRef.current = numVersion;
     }
 
     lastQId.current = qData.id;
@@ -2341,11 +2393,13 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     pendingResultRef.current = null;
     submittingRef.current = false;
     pendingPromiseRef.current = null;
+    setIsTimeUp(false);
     setIsRevealed(false);
     setCorrectChoiceId(null);
     setShowMidBoard(false);
     playedSound.current = false;
     if (midBoardTimer.current) clearTimeout(midBoardTimer.current);
+    if (myResultRetryTimer.current) clearTimeout(myResultRetryTimer.current);
 
     sfx.play('join');
   }, []);
@@ -2384,8 +2438,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         sfx.play('click');
       }
 
-      if (remainingSec <= 0 && !isRevealedRef.current) {
-        triggerReveal();
+      if (remainingSec <= 0) {
+        setIsTimeUp(true);
       }
     };
 
@@ -2479,6 +2533,15 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           return;
         }
         setGameStatus(data.status);
+
+        // Version guard before handling or state check (R2.2)
+        const versionNum = Number(data.state_version || 0);
+        if (versionNum > 0 && versionNum <= lastProcessedVersionRef.current) {
+          if (data.question_state === 'revealed' && !isRevealedRef.current) {
+            triggerReveal(data.current_question?.correct_choice_id);
+          }
+          return;
+        }
 
         const isNewQuestion = data.current_question && (
           data.current_question.id !== lastQId.current ||
@@ -2592,7 +2655,39 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     return () => { if (midBoardTimer.current) clearTimeout(midBoardTimer.current); };
   }, [isRevealed, session?.pin, setPlayer]);
 
-  async function triggerReveal(revealedCorrectId = null) {
+  const fetchMyResult = useCallback(async (qId, attempt = 0) => {
+    if (myResultRetryTimer.current) clearTimeout(myResultRetryTimer.current);
+    if (!qId || qId !== questionRef.current?.id) return;
+
+    const activeToken = playerRef.current?.token || getPlayerAuth(sessionRef.current?.pin)?.token;
+    try {
+      const myRes = await playerGet(sessionRef.current?.pin, `/sessions/${sessionRef.current?.pin}/my-result?question_id=${qId}`, activeToken);
+      if (myRes && qId === questionRef.current?.id) {
+        if (myRes.correct_choice_id) {
+          setCorrectChoiceId(myRes.correct_choice_id);
+        }
+        pendingResultRef.current = myRes;
+        setPendingResult(myRes);
+        applyResultSoundAndScore(myRes);
+        return;
+      }
+    } catch (e) {
+      if (e?.status === 403) {
+        clearPlayerAuth(sessionRef.current?.pin);
+        setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
+        setMode('student-join');
+        return;
+      }
+      // If 409 NOT_REVEALED, retry every 1000ms until revealed or question changes (R2.3)
+      if (e?.status === 409 && qId === questionRef.current?.id && isRevealedRef.current) {
+        myResultRetryTimer.current = setTimeout(() => {
+          fetchMyResult(qId, attempt + 1);
+        }, 1000);
+      }
+    }
+  }, [applyResultSoundAndScore, setMode, setNotice]);
+
+  const triggerReveal = useCallback(async (revealedCorrectId = null) => {
     setIsRevealed(true);
     if (revealedCorrectId) {
       setCorrectChoiceId(revealedCorrectId);
@@ -2611,38 +2706,20 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       return;
     }
 
-    // Secure mode: Fetch authenticated result from /my-result
-    const activeToken = player?.token || getPlayerAuth(session?.pin)?.token;
-    try {
-      const qParam = question?.id ? `?question_id=${question.id}` : '';
-      const myRes = await playerGet(session.pin, `/sessions/${session.pin}/my-result${qParam}`, activeToken);
-      if (myRes) {
-        if (myRes.correct_choice_id) {
-          setCorrectChoiceId(myRes.correct_choice_id);
-        }
-        pendingResultRef.current = myRes;
-        setPendingResult(myRes);
-        applyResultSoundAndScore(myRes);
-        return;
-      }
-    } catch (e) {
-      if (e?.status === 403) {
-        clearPlayerAuth(session?.pin);
-        setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
-        setMode('student-join');
-        return;
-      }
+    // Secure mode: Fetch authenticated result from /my-result with retry on 409 (R2.3)
+    const curQ = questionRef.current;
+    if (curQ?.id) {
+      fetchMyResult(curQ.id);
     }
 
     if (selected === null && !playedSound.current) {
-      // Time expired without answering
       playedSound.current = true;
       sfx.play('wrong');
     }
-  }
+  }, [fetchMyResult, applyResultSoundAndScore, selected]);
 
   async function submitAnswer(choiceId) {
-    if (selected !== null || isRevealed || isLeadPeriod || timerDisplay <= 0) return;
+    if (selected !== null || isRevealed || isTimeUp || isLeadPeriod || timerDisplay <= 0) return;
     sfx.play('click');
     setSelected(choiceId);
     submittingRef.current = true;
@@ -2881,7 +2958,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
         {/* Circular Countdown Timer */}
         <div className={`countdown-clock ${timerDisplay <= 5 && !isRevealed && !isLeadPeriod ? 'is-urgent' : ''} ${isRevealed ? 'time-finished' : ''} ${isLeadPeriod ? 'is-lead' : ''}`}>
           <Clock3 size={20} />
-          <span className="clock-number">{isRevealed ? 'انتهى الوقت' : isLeadPeriod ? 'استعد...' : `${timerDisplay}s`}</span>
+          <span className="clock-number">{isRevealed ? 'تم الكشف' : isTimeUp ? 'انتهى الوقت' : isLeadPeriod ? 'استعد...' : `${timerDisplay}s`}</span>
         </div>
 
         <div className="hud-streak-chip">
@@ -2914,7 +2991,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
               key={c.id}
               className={`kahoot-btn tone-${shape.color} ${isSelected ? 'selected-btn' : ''} ${isCorrect ? 'correct-btn' : ''} ${isWrong ? 'wrong-btn' : ''}`}
               onClick={() => submitAnswer(c.id)}
-              disabled={selected !== null || timerDisplay <= 0 || isRevealed || isLeadPeriod}
+              disabled={selected !== null || timerDisplay <= 0 || isTimeUp || isRevealed || isLeadPeriod}
             >
               <div className="shape-disc">{shape.symbol}</div>
               <div className="kahoot-text-box">
@@ -2941,7 +3018,18 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           <Clock3 size={24} className="spin-bounce" />
           <div className="alb-text">
             <strong>تم تأكيد إجابتك بنجاح! 🔒</strong>
-            <p>النتيجة والإجابة الصحيحة ستظهر للجميع أول ما الوقت يخلص أو يكشفها المعلم ⏳</p>
+            <p>{isTimeUp ? 'في انتظار قيام المعلم بكشف الإجابة الصحيحة... ⏳' : 'النتيجة والإجابة الصحيحة ستظهر للجميع أول ما الوقت يخلص أو يكشفها المعلم ⏳'}</p>
+          </div>
+        </div>
+      )}
+
+      {/* State 1B: Time expired without selecting, waiting for teacher to reveal (R2.3) */}
+      {selected === null && isTimeUp && !isRevealed && (
+        <div className="answer-locked-banner">
+          <Clock3 size={24} className="spin-bounce" />
+          <div className="alb-text">
+            <strong>انتهى وقت الإجابة لهذا السؤال! ⏰</strong>
+            <p>في انتظار قيام المعلم بكشف الإجابة الصحيحة وتحديث الترتيب... ⏳</p>
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@ window.Pusher = Pusher;
 
 let echoInstance = null;
 const channelSubscriberCount = {};
+const channelLeaveTimers = {};
 
 /**
  * Returns a singleton Echo instance connected to Laravel Reverb.
@@ -25,32 +26,45 @@ export function getEcho() {
     wsHost: currentHost,
     wsPort: Number(reverbPort),
     wssPort: Number(reverbPort),
-    forceTLS: reverbScheme === 'https',
+    forceTLS: window.location.protocol === 'https:' || reverbScheme === 'https',
     enabledTransports: ['ws', 'wss'],
     disableStats: true,
   });
 
-  // Active reconnection guard: if connection drops or becomes unavailable, retry proactively
+  // Active reconnection guard with exponential backoff & jitter (R2.6)
   const connection = echoInstance.connector?.pusher?.connection;
   if (connection) {
+    let reconnectAttempts = 0;
     let reconnectTimer = null;
+
+    const scheduleReconnect = () => {
+      if (reconnectTimer) return;
+      reconnectAttempts++;
+      // Backoff: 1s, 2s, 4s, max 10s + jitter
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 10000) + Math.random() * 500;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (connection.state !== 'connected' && connection.state !== 'connecting') {
+          console.log(`[Echo] Reconnecting to Reverb (attempt #${reconnectAttempts}, delay ${Math.round(delay)}ms)...`);
+          connection.connect();
+        }
+      }, delay);
+    };
+
     connection.bind('state_change', (states) => {
       if (states.current === 'unavailable' || states.current === 'disconnected') {
-        if (!reconnectTimer) {
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            if (connection.state !== 'connected' && connection.state !== 'connecting') {
-              console.log('[Echo] Proactive reconnection attempt to Reverb...');
-              connection.connect();
-            }
-          }, 1200);
-        }
+        scheduleReconnect();
       } else if (states.current === 'connected') {
+        reconnectAttempts = 0;
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;
         }
       }
+    });
+
+    connection.bind('error', () => {
+      scheduleReconnect();
     });
   }
 
@@ -67,6 +81,13 @@ export function subscribeToSession(pin, listeners = {}, onReconnect = null) {
 
   const echo = getEcho();
   const channelName = `session.${pin}`;
+
+  // If a delayed leave was pending for this channel, cancel it
+  if (channelLeaveTimers[channelName]) {
+    clearTimeout(channelLeaveTimers[channelName]);
+    delete channelLeaveTimers[channelName];
+  }
+
   channelSubscriberCount[channelName] = (channelSubscriberCount[channelName] || 0) + 1;
   const channel = echo.channel(channelName);
 
@@ -92,16 +113,27 @@ export function subscribeToSession(pin, listeners = {}, onReconnect = null) {
 
   return () => {
     try {
-      Object.keys(listeners).forEach((eventName) => {
-        channel.stopListening(`.${eventName}`);
-        channel.stopListening(eventName);
+      // Unsubscribe specific handlers
+      Object.entries(listeners).forEach(([eventName, handler]) => {
+        channel.stopListening(`.${eventName}`, handler);
+        channel.stopListening(eventName, handler);
       });
       if (connection && stateHandler) {
         connection.unbind('state_change', stateHandler);
       }
       channelSubscriberCount[channelName] = Math.max(0, (channelSubscriberCount[channelName] || 1) - 1);
+
+      // Delay leave by 1500ms on unmount so fast component transitions don't thrash socket (R2.6)
       if (channelSubscriberCount[channelName] === 0) {
-        echo.leaveChannel(channelName);
+        if (channelLeaveTimers[channelName]) {
+          clearTimeout(channelLeaveTimers[channelName]);
+        }
+        channelLeaveTimers[channelName] = setTimeout(() => {
+          if (channelSubscriberCount[channelName] === 0) {
+            echo.leaveChannel(channelName);
+          }
+          delete channelLeaveTimers[channelName];
+        }, 1500);
       }
     } catch (e) {
       console.warn('[Echo] Error cleaning up channel:', e);
