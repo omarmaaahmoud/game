@@ -63,43 +63,50 @@ flowchart TD
 
 ---
 
-## 3. دورة حياة المسابقة (Game Flow & Sequence Diagram)
+## 3. دورة حياة المسابقة والاتصال اللحظي (Real-time & Timer Synchronization)
 
-يوضح المخطط التالي كيفية التفاعل اللحظي بين المعلم، السيرفر، والطلاب بدون الحاجة لـ WebSockets عبر نظام **Smart Polling**:
+يعتمد التطبيق على معمارية هجينة للاتصال اللحظي تجمع بين **Laravel Reverb WebSockets** كقناة رئيسية سريعة، و**Adaptive Smart Polling** كقناة بديلة تضمن استمرارية اللعب بنسبة 100%:
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor Teacher as 👨‍🏫 المعلم
-    participant Vercel as 🌐 الواجهة (Vercel)
-    participant Railway as ⚙️ السيرفر (Railway)
-    actor Student as 👦 الطالب
+    participant Server as ⚙️ السيرفر (Laravel + Reverb)
+    actor Student as 👦 الطلاب
 
-    Note over Teacher,Railway: مرحلة إنشاء الجلسة وتجهيز الغرفة
-    Teacher->>Vercel: إنشاء مسابقة جديدة (العنوان + الأسئلة)
-    Vercel->>Railway: POST /api/sessions
-    Railway-->>Vercel: 201 Created (PIN: 861094)
-    Teacher->>Vercel: فتح غرفة الانتظار (Teacher Lobby)
+    Note over Teacher,Server: مرحلة إنشاء وتأمين الجلسة
+    Teacher->>Server: POST /api/sessions (إنشاء مسابقة)
+    Server-->>Teacher: 201 Created (PIN + Teacher Token عالي الأمان)
     
-    Note over Student,Railway: مرحلة انضمام الطلاب
-    Student->>Vercel: إدخال PIN (861094) + الاسم + الشخصية الكرتونية
-    Vercel->>Railway: POST /api/sessions/861094/join
-    Railway-->>Vercel: 201 Joined (Player ID + Token)
-    Student->>Vercel: دخول غرفة انتظار الطالب (Student Lobby)
+    Note over Student,Server: مرحلة انضمام الطلاب
+    Student->>Server: POST /api/sessions/:pin/join (الاسم + الأفاتار)
+    Server-->>Student: 201 Joined (Player Token مشفر بـ SHA-256)
+    Server--)Teacher: بث لحظي PlayerJoined عبر Reverb
 
-    Note over Teacher,Student: مرحلة التزامن (Polling Loop)
-    loop كل ثانية (1s Polling)
-        Teacher->>Railway: GET /api/sessions/861094/players
-        Student->>Railway: GET /api/sessions/861094/poll
-    end
+    Note over Teacher,Student: بدء اللعب وتزامن التوقيت المركزي
+    Teacher->>Server: POST /api/sessions/:pin/start (بترويسة X-Teacher-Token)
+    Server--)Student: بث لحظي GameStarted مع question_started_at و state_version
+    Note over Student: حساب الوقت المتبقي محلياً اعتماداً على توقيت السيرفر
 
-    Note over Teacher,Student: بدء اللعب
-    Teacher->>Railway: POST /api/sessions/861094/start
-    Student->>Railway: التقاط تغيير الحالة (status: active)
-    Student->>Vercel: الانتقال لشاشة السؤال تلقائياً
-    Student->>Railway: POST /api/sessions/861094/answer (إرسال الإجابة وحساب النقاط)
-    Teacher->>Railway: POST /api/sessions/861094/reveal (كشف النتائج ولوحة المتصدرين)
+    Note over Student,Server: استقبال الإجابات الذرية
+    Student->>Server: POST /api/sessions/:pin/answer (X-Player-Token)
+    Server-->>Student: 200 { accepted: true } (سرية الإجابة: لا كشف للصحة قبل الإعلان)
+    Server--)Teacher: بث StudentAnswered (تحديث عدد المجيبين دون كشف الأسماء)
+
+    Note over Teacher,Student: كشف الإجابة والنتائج
+    Teacher->>Server: POST /api/sessions/:pin/reveal
+    Server--)Student: بث AnswerRevealed مع correct_choice_id
+    Student->>Server: GET /api/sessions/:pin/my-result (جلب النقاط والتصنيف)
+    Teacher->>Server: POST /api/sessions/:pin/end
+    Server--)Student: بث GameFinished
+    Student->>Server: GET /api/sessions/:pin/results (منصة التتويج والنتائج النهائية)
 ```
+
+### الأمان وتكامل البيانات (Security & Integrity Hardening):
+1. **مصادقة المعلم والطلاب (Token-based Auth):** يتم تخزين `teacher_token_hash` و `token_hash` بتشفير SHA-256. التوكن لا يمر عبر روابط URL أو معاملات Query String، بل عبر ترويسات `X-Teacher-Token` و `X-Player-Token`.
+2. **سرية الإجابات (Answer Secrecy):** استدعاء `/answer` يرد بـ `{ accepted: true }` فقط. نقطة نهاية `/my-result` و `/results` محمية برمز HTTP 409 `NOT_REVEALED` / `NOT_COMPLETED` حتى يضغط المعلم زر الكشف أو تنتهي المسابقة.
+3. **التحديث الذري والمنع التكراري (Atomic Scoring & Concurrency):** منع السباق في النقاط والـ streak عبر قيود فريدة `unique(['player_id', 'question_id'])` و `increment` الذري. الإجابات المكررة ترد برمز 409 `ALREADY_ANSWERED` دون تصفير اختيار الطالب.
+4. **استعادة الاتصال (Reconnection / Self-Healing):** في حال انقطاع الشبكة أو إعادة تحميل الصفحة، يتصل العميل بـ `GET /api/sessions/:pin/me` بالتوكن المخزن لاستعادة حالة الطالب والعودة فوراً لشاشة اللعب أو غرفة الانتظار.
 
 ---
 
