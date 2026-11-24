@@ -207,16 +207,16 @@ echo "\n── Test 2: next() advances question, sets timing; double-click idemp
     assert_eq(1, $session->current_question_index, 'Double-click with wrong expected_index: still at 1');
     assert_eq($startedAtAfterNext, $session->question_started_at, 'Double-click: question_started_at unchanged');
 
-    // Rapid double-click within 800ms (correct expected_index but too fast)
-    $session->update(['question_started_at' => nowMs()]); // simulate just started
+    // Test paused state rejection in next() (M3.1)
+    $session->update(['status' => 'paused']);
     $session->refresh();
-    $request3 = new \Illuminate\Http\Request();
-    $request3->merge(['expected_index' => 1]);
-    app()->instance('request', $request3);
-    $response3 = $controller->next($request3, $session->pin);
+    $requestPaused = new \Illuminate\Http\Request();
+    $requestPaused->merge(['expected_index' => 1]);
+    app()->instance('request', $requestPaused);
+    $responsePaused = $controller->next($requestPaused, $session->pin);
+    assert_eq(422, $responsePaused->getStatusCode(), 'next() while paused returns 422 INVALID_STATE');
+    $session->update(['status' => 'active']);
     $session->refresh();
-
-    assert_eq(1, $session->current_question_index, 'Rapid click within 800ms: index still 1 (not skipped)');
 }
 
 // ═══════════════════════════════════════════════════════════════════

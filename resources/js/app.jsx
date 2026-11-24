@@ -1478,7 +1478,7 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
             <GraduationCap size={22} className="gbb-cap" />
           </div>
           <div className="gbb-text">
-            <strong className="gbb-title">Tecorbia</strong>
+            <strong className="gbb-title">Tecorbi</strong>
             <span className="gbb-sub">Kids Arena •</span>
           </div>
         </div>
@@ -1486,7 +1486,7 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
         {/* Center: Live Quiz Squircle */}
         <div className="glass-quiz-badge">
           <span>المسابقات المدرسية</span>
-          <span>- المتنزية</span>
+          <span>- المباشرة</span>
           <strong>Live Quiz</strong>
         </div>
 
@@ -1538,7 +1538,7 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
           <div className="spgc-gamepad-disc">
             <Gamepad2 size={24} />
           </div>
-          <span className="spgc-title">(GAME PIN) كود الانضمام بالطلب</span>
+          <span className="spgc-title">(GAME PIN) كود الانضمام للطلاب</span>
         </div>
 
         <div className="spgc-numbers-display">
@@ -1550,7 +1550,7 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
           <div className="spgc-copy-btn">
             <Copy size={16} />
           </div>
-          <span className="spgc-copy-hint">الضغط هنا لنسخ الكود ومشاركته مع الفصل</span>
+          <span className="spgc-copy-hint">اضغط هنا لنسخ الكود ومشاركته مع الفصل</span>
         </div>
       </div>
 
@@ -1660,6 +1660,15 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
           setLeaderboard(data.leaderboard);
         }
       },
+      SessionPaused: (data) => {
+        if (data?.question_paused_remaining_ms !== undefined) {
+          setLiveRemaining(Math.ceil(data.question_paused_remaining_ms / 1000));
+        }
+        refresh();
+      },
+      SessionResumed: () => {
+        refresh();
+      },
       GameFinished: () => {
         setMode('leaderboard');
       },
@@ -1703,6 +1712,11 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
       const p = pollRef.current;
       if (!p || !p.current_question) {
         setLiveRemaining(null);
+        return;
+      }
+      if (p.status === 'paused') {
+        const remMs = p.question_paused_remaining_ms !== undefined ? p.question_paused_remaining_ms : null;
+        setLiveRemaining(remMs !== null ? Math.ceil(remMs / 1000) : null);
         return;
       }
       const startedAt = p.question_started_at;
@@ -2080,7 +2094,18 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
       setNotice(`مرحباً يا بطل! تم انضمامك للمسابقة بنجاح 🎉`);
     } catch (e) {
       console.error('Join error:', e);
-      setNotice('حدث خطأ أثناء الانضمام للمسابقة. تأكد من الاتصال بالسيرفر');
+      const code = e?.data?.code;
+      if (code === 'NAME_TAKEN') {
+        setNotice('❌ هذا الاسم مستخدم بالفعل في هذه الجلسة، اختر اسماً آخر');
+      } else if (code === 'NAME_INVALID') {
+        setNotice('❌ يرجى كتابة اسم صحيح (من 1 إلى 20 حرف بدون رموز خاصة)');
+      } else if (code === 'SESSION_FULL') {
+        setNotice('⚠️ عذراً، الجلسة ممتلئة بالحد الأقصى للطلاب');
+      } else if (code === 'SESSION_COMPLETED') {
+        setNotice('⚠️ هذه المسابقة انتهت بالفعل');
+      } else {
+        setNotice('حدث خطأ أثناء الانضمام للمسابقة. تأكد من الاتصال بالسيرفر');
+      }
     }
     setLoading(false);
   }
@@ -2130,7 +2155,7 @@ function StudentJoin({ setMode, setSession, setPlayer, setNotice, initialPin = '
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="اكتب اسمك هنا (مثال: عمر البطل)..."
-            maxLength={35}
+            maxLength={20}
             autoFocus
           />
         </div>
@@ -2478,6 +2503,15 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
           if (myP && myP.score !== undefined) {
             setPlayer(p => ({ ...p, score: myP.score }));
           }
+        }
+      },
+      SessionPaused: () => {
+        setGameStatus('paused');
+      },
+      SessionResumed: (data) => {
+        setGameStatus('active');
+        if (data?.question_started_at) {
+          questionStartedAtRef.current = data.question_started_at;
         }
       },
       GameFinished: () => {

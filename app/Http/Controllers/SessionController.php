@@ -12,6 +12,8 @@ use App\Events\AnswerRevealed;
 use App\Events\LeaderboardUpdated;
 use App\Events\GameFinished;
 use App\Events\SessionReset;
+use App\Events\SessionPaused;
+use App\Events\SessionResumed;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -37,10 +39,10 @@ class SessionController extends Controller
         ]);
 
         foreach ($validated['questions'] as $qi => $qData) {
-            $hasCorrect = collect($qData['choices'])->contains(fn ($c) => !empty($c['is_correct']));
-            if (!$hasCorrect) {
+            $correctCount = collect($qData['choices'])->filter(fn ($c) => !empty($c['is_correct']))->count();
+            if ($correctCount !== 1) {
                 return response()->json([
-                    'error' => 'Question ' . ($qi + 1) . ' must have at least one correct choice',
+                    'error' => 'Question ' . ($qi + 1) . ' must have exactly one correct choice',
                     'code' => 'INVALID_CHOICES',
                 ], 422);
             }
@@ -164,23 +166,32 @@ class SessionController extends Controller
         $playerToken = bin2hex(random_bytes(32));
         $playerTokenHash = hash('sha256', $playerToken);
 
-        $player = $session->players()->create([
-            'name' => $cleanName,
-            'avatar' => $validated['avatar'],
-            'token_hash' => $playerTokenHash,
-            'joined_at' => now(),
-        ]);
+        try {
+            $player = $session->players()->create([
+                'name' => $cleanName,
+                'avatar' => $validated['avatar'],
+                'token_hash' => $playerTokenHash,
+                'joined_at' => now(),
+            ]);
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            return response()->json([
+                'error' => 'Player name already taken in this session',
+                'code' => 'NAME_TAKEN',
+            ], 422);
+        }
 
         $playerCount = $session->players()->count();
 
-        // Broadcast player joined event to all clients on session
-        broadcast(new PlayerJoined($session->pin, [
-            'id' => $player->id,
-            'name' => $player->name,
-            'avatar' => $player->avatar,
-            'score' => $player->score ?? 0,
-            'streak' => $player->streak ?? 0,
-        ], $playerCount));
+        // Broadcast player joined event to all clients on session after commit
+        DB::afterCommit(function () use ($session, $player, $playerCount) {
+            broadcast(new PlayerJoined($session->pin, [
+                'id' => $player->id,
+                'name' => $player->name,
+                'avatar' => $player->avatar,
+                'score' => $player->score ?? 0,
+                'streak' => $player->streak ?? 0,
+            ], $playerCount));
+        });
 
         return response()->json([
             'player' => $player,
@@ -284,17 +295,10 @@ class SessionController extends Controller
             }, 5);
         } catch (\Illuminate\Database\QueryException $e) {
             if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
-                $session = GameSession::where('pin', $pin)->first();
-                if ($session) {
-                    return response()->json([
-                        'status' => $session->status,
-                        'current_question_index' => (int) $session->current_question_index,
-                        'question_state' => $session->question_state,
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
-                }
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
             }
             throw $e;
         }
@@ -306,6 +310,15 @@ class SessionController extends Controller
         try {
             return DB::transaction(function () use ($request, $pin) {
                 $session = GameSession::where('pin', $pin)->firstOrFail();
+
+                // M3.1: Reject if session is paused
+                if ($session->status === 'paused') {
+                    return response()->json([
+                        'error' => 'Cannot advance question while session is paused',
+                        'code' => 'INVALID_STATE',
+                    ], 422);
+                }
+
                 $allQuestions = $session->questions()->with('choices')->orderBy('order')->get();
                 $totalQuestions = $allQuestions->count();
                 $nowMs = (int) round(microtime(true) * 1000);
@@ -313,24 +326,9 @@ class SessionController extends Controller
                 $currentIndex = (int) $session->current_question_index;
                 $currentVersion = (int) $session->state_version;
 
-                // Idempotency guard 1: caller expected_index mismatch
+                // Idempotency guard: caller expected_index mismatch
                 $expectedIndex = $request->input('expected_index');
                 if ($expectedIndex !== null && (int) $expectedIndex !== $currentIndex) {
-                    return response()->json([
-                        'status' => $session->status,
-                        'current_question_index' => $currentIndex,
-                        'total_questions' => $totalQuestions,
-                        'question_state' => $session->question_state,
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => $currentVersion,
-                        'server_now_ms' => $nowMs,
-                    ]);
-                }
-
-                // Idempotency guard 2: rapid double click within 800ms
-                if ($session->question_started_at !== null &&
-                    $session->question_state === 'answering' &&
-                    abs($nowMs - $session->question_started_at) < 800) {
                     return response()->json([
                         'status' => $session->status,
                         'current_question_index' => $currentIndex,
@@ -440,19 +438,10 @@ class SessionController extends Controller
             }, 5);
         } catch (\Illuminate\Database\QueryException $e) {
             if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
-                $session = GameSession::where('pin', $pin)->first();
-                if ($session) {
-                    $totalQuestions = $session->questions()->count();
-                    return response()->json([
-                        'status' => $session->status,
-                        'current_question_index' => (int) $session->current_question_index,
-                        'total_questions' => $totalQuestions,
-                        'question_state' => $session->question_state,
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
-                }
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
             }
             throw $e;
         }
@@ -463,6 +452,14 @@ class SessionController extends Controller
     {
         return DB::transaction(function () use ($pin) {
             $session = GameSession::where('pin', $pin)->firstOrFail();
+
+            // M3.2: Reject if status is not active
+            if ($session->status !== 'active') {
+                return response()->json([
+                    'error' => 'Session is not active to reveal',
+                    'code' => 'INVALID_STATE',
+                ], 422);
+            }
 
             // Idempotent: if already revealed, return current state
             if ($session->question_state === 'revealed') {
@@ -580,6 +577,10 @@ class SessionController extends Controller
                     ]);
                 }
 
+                DB::afterCommit(function () use ($session, $remainingMs, $currentVersion) {
+                    broadcast(new SessionPaused($session->pin, $remainingMs, $currentVersion + 1));
+                });
+
                 return response()->json([
                     'status' => 'paused',
                     'question_paused_remaining_ms' => $remainingMs,
@@ -589,15 +590,10 @@ class SessionController extends Controller
             }, 5);
         } catch (\Illuminate\Database\QueryException $e) {
             if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
-                $session = GameSession::where('pin', $pin)->first();
-                if ($session) {
-                    return response()->json([
-                        'status' => $session->status,
-                        'question_paused_remaining_ms' => $session->question_paused_remaining_ms,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
-                }
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
             }
             throw $e;
         }
@@ -665,6 +661,10 @@ class SessionController extends Controller
                     ]);
                 }
 
+                DB::afterCommit(function () use ($session, $newStartedAt, $currentVersion) {
+                    broadcast(new SessionResumed($session->pin, $newStartedAt, $currentVersion + 1));
+                });
+
                 return response()->json([
                     'status' => 'active',
                     'question_started_at' => $newStartedAt,
@@ -674,15 +674,10 @@ class SessionController extends Controller
             }, 5);
         } catch (\Illuminate\Database\QueryException $e) {
             if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
-                $session = GameSession::where('pin', $pin)->first();
-                if ($session) {
-                    return response()->json([
-                        'status' => $session->status,
-                        'question_started_at' => $session->question_started_at,
-                        'state_version' => (int) $session->state_version,
-                        'server_now_ms' => (int) round(microtime(true) * 1000),
-                    ]);
-                }
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
             }
             throw $e;
         }
