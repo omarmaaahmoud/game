@@ -1233,7 +1233,7 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
 
             <h3 className="td-card-title">إنشاء مسابقة جديدة</h3>
             <p className="td-card-desc">
-              أضف أسئلة جديدة، خيارات ملونة، وحدد وقت الإجابة لكل سؤال
+              أضف أسئلة جديدة، خيارات متنوعة، وحدد وقت الإجابة لكل سؤال
             </p>
 
             <button
@@ -1264,6 +1264,9 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
         {/* Left Column (3D Books & Trophy Illustration) */}
         <div className="td-art-col">
           <div className="td-art-stage">
+            <span className="td-float-star td-star-1" aria-hidden="true">★</span>
+            <span className="td-float-star td-star-2" aria-hidden="true">★</span>
+            <span className="td-float-star td-star-3" aria-hidden="true">★</span>
             <img
               src="/images/teacher-books-trophy.jpg"
               alt="كأس التفوق وكتب المسابقات التعليمية"
