@@ -44,7 +44,6 @@ class StudentAnswered implements ShouldBroadcastNow
         return [
             'pin' => $this->pin,
             'player_id' => $this->playerId,
-            'player_name' => $this->playerName,
             'answered_count' => $this->answeredCount,
             'total_players' => $this->totalPlayers,
             '_ts' => (int) round(microtime(true) * 1000),

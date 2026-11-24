@@ -67,7 +67,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         \Illuminate\Support\Facades\RateLimiter::for('api.join', function (\Illuminate\Http\Request $request) {
             $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
-            return \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($pin . '|' . $request->ip());
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(120)->by($pin . '|' . $request->ip());
         });
 
         \Illuminate\Support\Facades\RateLimiter::for('api.answer', function (\Illuminate\Http\Request $request) {
@@ -77,7 +77,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 ?? $request->input('player_id')
                 ?? $request->ip();
 
-            return \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($pin . '|' . $playerKey);
+            return \Illuminate\Cache\RateLimiting\Limit::perMinute(30)->by($pin . '|' . $playerKey);
         });
     })->create();
 

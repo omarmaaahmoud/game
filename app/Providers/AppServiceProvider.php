@@ -35,7 +35,7 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('api.join', function (Request $request) {
             $pin = (string) ($request->route('pin') ?: $request->segment(3) ?: 'global');
-            return Limit::perMinute(60)->by($pin . '|' . $request->ip());
+            return Limit::perMinute(120)->by($pin . '|' . $request->ip());
         });
 
         RateLimiter::for('api.answer', function (Request $request) {
@@ -46,7 +46,7 @@ class AppServiceProvider extends ServiceProvider
                 ?? $request->input('player_id')
                 ?? $request->ip();
 
-            return Limit::perMinute(60)->by($pin . '|' . $playerKey);
+            return Limit::perMinute(30)->by($pin . '|' . $playerKey);
         });
     }
 }

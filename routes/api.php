@@ -19,6 +19,7 @@ Route::middleware('teacher.auth')->group(function () {
     Route::post('/sessions/{pin}/resume', [SessionController::class, 'resume']);
     Route::post('/sessions/{pin}/end', [SessionController::class, 'end']);
     Route::post('/sessions/{pin}/reset', [SessionController::class, 'reset']);
+    Route::get('/sessions/{pin}/question-stats', [GameController::class, 'questionStats']);
 });
 
 // Game play

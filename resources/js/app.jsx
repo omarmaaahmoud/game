@@ -261,7 +261,7 @@ const get = (url, customHeaders = {}) => {
 };
 
 const teacherPost = (pin, url, body = {}) => {
-  const token = getTeacherToken(pin) || (pin === '123456' ? 'tecorbi-demo-teacher-token-123456' : null);
+  const token = getTeacherToken(pin) || ((import.meta.env.DEV && pin === '123456') ? 'tecorbi-demo-teacher-token-123456' : null);
   const headers = token ? { 'X-Teacher-Token': token } : {};
   return post(url, body, headers);
 };
@@ -954,15 +954,14 @@ function TeacherAuthModal({ setMode, setIsTeacherUnlocked, setNotice }) {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    // Default teacher passcode is 1234
-    if (passcode === '1234' || passcode === '') {
+    if (passcode === '1234') {
       sfx.play('win');
       setIsTeacherUnlocked(true);
       setMode('teacher-dashboard');
       setNotice('👋 أهلاً بك يا معلّم في لوحة التحكم!');
     } else {
       sfx.play('wrong');
-      setError('رمز المرور غير صحيح (الرمز الافتراضي: 1234)');
+      setError(import.meta.env.DEV ? 'رمز المرور غير صحيح (الرمز الافتراضي للتطوير: 1234)' : 'رمز المرور غير صحيح');
     }
   };
 
@@ -977,12 +976,12 @@ function TeacherAuthModal({ setMode, setIsTeacherUnlocked, setNotice }) {
 
         <form onSubmit={handleLogin}>
           <div className="field-block">
-            <label>رمز دخول المعلم (الافتراضي: 1234)</label>
+            <label>{import.meta.env.DEV ? 'رمز دخول المعلم (الافتراضي: 1234)' : 'رمز دخول المعلم'}</label>
             <input
               type="password"
               value={passcode}
               onChange={e => { setPasscode(e.target.value); setError(''); }}
-              placeholder="1234"
+              placeholder={import.meta.env.DEV ? '1234' : '••••'}
               autoFocus
             />
             {error && <small className="auth-error-msg">{error}</small>}
@@ -1007,8 +1006,10 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
     sfx.play('click');
     try {
       let data;
-      const demoToken = getTeacherToken('123456') || 'tecorbi-demo-teacher-token-123456';
-      saveTeacherToken('123456', demoToken);
+      const demoToken = getTeacherToken('123456') || (import.meta.env.DEV ? 'tecorbi-demo-teacher-token-123456' : null);
+      if (demoToken) {
+        saveTeacherToken('123456', demoToken);
+      }
       try {
         data = await get('/sessions/123456');
         if (data.status === 'completed') {
@@ -1057,14 +1058,20 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
           ],
         });
         data = created;
-        if (created?.teacher_token) {
-          saveTeacherToken(created.pin || '123456', created.teacher_token);
+        if (created?.teacher_token && created?.pin) {
+          saveTeacherToken(created.pin, created.teacher_token);
         }
       }
       const sessionObj = data?.session || data?.data?.session || data?.data || data;
-      const pin = String(data?.pin || data?.session?.pin || sessionObj?.pin || '123456');
+      const pin = String(data?.pin || data?.session?.pin || sessionObj?.pin || '');
+      if (!pin) {
+        setNotice('تعذر تحديد كود المسابقة');
+        return;
+      }
       const activeTeacherToken = data?.teacher_token || getTeacherToken(pin) || demoToken;
-      saveTeacherToken(pin, activeTeacherToken);
+      if (activeTeacherToken) {
+        saveTeacherToken(pin, activeTeacherToken);
+      }
       setSession({ ...sessionObj, pin, teacher_token: activeTeacherToken });
       setMode('teacher-lobby');
       sfx.play('join');
@@ -1101,18 +1108,20 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink }) {
           </button>
         </div>
 
-        {/* Demo Ready Quiz Card */}
-        <div className="teacher-dash-card demo-card" onClick={launchDemoTeacher}>
-          <div className="tdc-icon demo-icon">
-            <Trophy size={36} />
+        {/* Demo Ready Quiz Card (Only in DEV) */}
+        {import.meta.env.DEV && (
+          <div className="teacher-dash-card demo-card" onClick={launchDemoTeacher}>
+            <div className="tdc-icon demo-icon">
+              <Trophy size={36} />
+            </div>
+            <span className="pin-pill-mini">كود: 123456</span>
+            <h3>تشغيل المسابقة التجريبية الجاهزة</h3>
+            <p>مسابقة جاهزة عن الفضاء والعلوم لإجراء تجربة فورية مع الفصل</p>
+            <button className="btn-3d btn-demo-teacher">
+              <Play size={18} fill="currentColor" /> فتح غرفة الانتظار (Lobby) 🚀
+            </button>
           </div>
-          <span className="pin-pill-mini">كود: 123456</span>
-          <h3>تشغيل المسابقة التجريبية الجاهزة</h3>
-          <p>مسابقة جاهزة عن الفضاء والعلوم لإجراء تجربة فورية مع الفصل</p>
-          <button className="btn-3d btn-demo-teacher">
-            <Play size={18} fill="currentColor" /> فتح غرفة الانتظار (Lobby) 🚀
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Mobile Link Banner for Teacher */}
@@ -1235,6 +1244,11 @@ function TeacherCreate({ setMode, setSession, setNotice }) {
       });
       const sessionObj = data?.session || data?.data?.session || data?.data || data;
       const sessionPin = String(data?.pin || data?.session?.pin || data?.data?.pin || sessionObj?.pin || '');
+      if (!sessionPin) {
+        setNotice('تعذر استلام كود المسابقة من الخادم');
+        setLoading(false);
+        return;
+      }
       if (data?.teacher_token) {
         saveTeacherToken(sessionPin, data.teacher_token);
       }
@@ -2557,21 +2571,26 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     if (!isRevealed) return;
     midBoardTimer.current = setTimeout(async () => {
       try {
-        const lb = await get(`/sessions/${session.pin}/leaderboard`);
+        const activeToken = playerRef.current?.token || getPlayerAuth(session?.pin)?.token;
+        const lb = await playerGet(session?.pin, `/sessions/${session?.pin}/leaderboard`, activeToken);
         const board = lb.leaderboard || [];
         setMidLeaderboard(board);
-        const idx = board.findIndex(p => p.id === player.id);
-        setMyRank(idx >= 0 ? idx + 1 : null);
-        const myP = board.find(p => p.id === player.id);
-        if (myP && myP.score !== undefined) {
-          setPlayer(p => ({ ...p, score: myP.score }));
+        if (lb.my_rank !== undefined && lb.my_rank !== null) {
+          setMyRank(lb.my_rank);
+        } else {
+          const myId = playerRef.current?.id;
+          const idx = board.findIndex(p => p.id === myId);
+          setMyRank(idx >= 0 ? idx + 1 : null);
+        }
+        if (lb.my_score !== undefined && lb.my_score !== null) {
+          setPlayer(p => ({ ...p, score: lb.my_score }));
         }
         setShowMidBoard(true);
         sfx.play('join');
       } catch {}
     }, 3000);
     return () => { if (midBoardTimer.current) clearTimeout(midBoardTimer.current); };
-  }, [isRevealed, session, player, setPlayer]);
+  }, [isRevealed, session?.pin, setPlayer]);
 
   async function triggerReveal(revealedCorrectId = null) {
     setIsRevealed(true);
@@ -2595,7 +2614,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
     // Secure mode: Fetch authenticated result from /my-result
     const activeToken = player?.token || getPlayerAuth(session?.pin)?.token;
     try {
-      const myRes = await playerGet(session.pin, `/sessions/${session.pin}/my-result`, activeToken);
+      const qParam = question?.id ? `?question_id=${question.id}` : '';
+      const myRes = await playerGet(session.pin, `/sessions/${session.pin}/my-result${qParam}`, activeToken);
       if (myRes) {
         if (myRes.correct_choice_id) {
           setCorrectChoiceId(myRes.correct_choice_id);
@@ -2659,18 +2679,43 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
       }
     } catch (e) {
       submittingRef.current = false;
-      if (e?.status === 403) {
+      const code = e?.data?.code;
+
+      if (e?.status === 403 || code === 'UNAUTHORIZED_PLAYER') {
         clearPlayerAuth(session?.pin);
         setNotice('انتهت صلاحية جلستك، يرجى الانضمام مجدداً');
         setMode('student-join');
         return;
       }
-      // Handle other 4xx rejection gracefully (treat as time's up / locked out without crashing)
-      const errRes = { is_correct: false, points_earned: 0, total_score: player?.score || 0 };
-      pendingResultRef.current = errRes;
-      setPendingResult(errRes);
-      if (isRevealed) {
-        applyResultSoundAndScore(errRes);
+
+      if (e?.status === 409 && code === 'ALREADY_ANSWERED') {
+        // Already answered: keep choice selected and treat as accepted
+        pendingResultRef.current = { accepted: true };
+        setPendingResult({ accepted: true });
+        return;
+      }
+
+      if (code === 'TIME_EXPIRED') {
+        setNotice('⏰ انتهى وقت الإجابة لهذا السؤال');
+        return;
+      }
+
+      if (code === 'TOO_EARLY') {
+        setNotice('⏳ لم يبدأ وقت الإجابة بعد، استعد!');
+        setSelected(null);
+        return;
+      }
+
+      if (code === 'GAME_NOT_ACTIVE') {
+        setNotice('المسابقة ليست نشطة حالياً');
+        return;
+      }
+
+      // Network error or unexpected transport failure (no HTTP response status)
+      if (!e?.status) {
+        setSelected(null);
+        setNotice('حدث خطأ في الاتصال، يمكنك المحاولة مجدداً قبل انتهاء الوقت!');
+        return;
       }
     }
   }
@@ -2968,11 +3013,15 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer }) {
 /* ══════════════════════ ESPORTS HALL OF FAME LEADERBOARD ══════════════════════ */
 function Leaderboard({ session, setMode, player }) {
   const [results, setResults] = useState(null);
+  const [fetchError, setFetchError] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [activeTab, setActiveTab] = useState('individual');
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [showAllPlayers, setShowAllPlayers] = useState(false);
+  const retryCountRef = useRef(0);
 
   const pin = session?.pin || '123456';
+  const isTeacher = Boolean(getTeacherToken(session?.pin));
 
   // Audio & confetti celebration
   const blastAnthem = useCallback(() => {
@@ -3003,37 +3052,34 @@ function Leaderboard({ session, setMode, player }) {
     } catch {}
   }, []);
 
-  const fetchResults = useCallback(async () => {
+  const fetchResults = useCallback(async (isManual = false) => {
+    if (isManual) {
+      retryCountRef.current = 0;
+      setFetchError(false);
+      setIsRetrying(true);
+    }
     try {
       const data = await get(`/sessions/${pin}/results`);
       if (data && data.results) {
         setResults(data);
+        setFetchError(false);
+        setIsRetrying(false);
         setTimeout(blastAnthem, 400);
         return;
       }
-    } catch {}
-
-    // Fallback: poll session
-    try {
-      const pollData = await get(`/sessions/${pin}/poll`);
-      setResults({
-        title: session?.title || pollData?.title || 'Tecorbi Game 🎮',
-        total_questions: pollData?.total_questions || 3,
-        total_players: pollData?.player_count || 3,
-        results: []
-      });
-      setTimeout(blastAnthem, 400);
-    } catch {
-      // Guaranteed fallback so podium never hangs
-      setResults({
-        title: session?.title || 'منصة أبطال المسابقة 🏆',
-        total_questions: 3,
-        total_players: 3,
-        results: []
-      });
-      setTimeout(blastAnthem, 400);
+      throw new Error('Invalid results payload');
+    } catch (err) {
+      if (retryCountRef.current < 3) {
+        retryCountRef.current += 1;
+        setTimeout(() => {
+          fetchResults(false);
+        }, 1000);
+      } else {
+        setIsRetrying(false);
+        setFetchError(true);
+      }
     }
-  }, [pin, session, blastAnthem]);
+  }, [pin, blastAnthem]);
 
   useEffect(() => {
     sfx.play('win');
@@ -3043,6 +3089,7 @@ function Leaderboard({ session, setMode, player }) {
       ResultsRevealed: (data) => {
         if (data && data.results) {
           setResults(data);
+          setFetchError(false);
           setTimeout(blastAnthem, 400);
         }
       },
@@ -3051,20 +3098,39 @@ function Leaderboard({ session, setMode, player }) {
       },
     });
 
-    const emergencyUnlock = setTimeout(() => {
-      setResults(prev => prev || {
-        title: session?.title || 'منصة أبطال المسابقة 🏆',
-        total_questions: 3,
-        total_players: 3,
-        results: []
-      });
-    }, 2800);
-
     return () => {
       unsubscribe();
-      clearTimeout(emergencyUnlock);
     };
-  }, [fetchResults, session, pin, blastAnthem, setMode]);
+  }, [fetchResults, pin, blastAnthem, setMode]);
+
+  if (fetchError && !results) {
+    return (
+      <main className="loading-state-box">
+        <div className="game-loader">
+          <Trophy size={56} style={{ color: '#ef4444' }} />
+          <h2>تعذر تحميل نتائج المسابقة النهائية ⚠️</h2>
+          <p style={{ color: '#94a3b8', marginTop: '8px' }}>يرجى التحقق من الاتصال وإعادة المحاولة</p>
+          <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
+            <button
+              className="btn-3d"
+              onClick={() => fetchResults(true)}
+              disabled={isRetrying}
+              style={{ padding: '8px 18px', fontSize: '13px' }}
+            >
+              {isRetrying ? 'جاري إعادة المحاولة...' : 'إعادة المحاولة 🔄'}
+            </button>
+            <button
+              className="btn-3d"
+              onClick={() => setMode('home')}
+              style={{ padding: '8px 18px', fontSize: '13px', background: 'rgba(255,255,255,0.1)' }}
+            >
+              الرئيسية 🏠
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   if (!results) {
     return (
@@ -3073,18 +3139,6 @@ function Leaderboard({ session, setMode, player }) {
           <Trophy size={56} className="spin-bounce gold-color" />
           <h2>جاري تتويج الأبطال وحساب منصة التكريم... 🏆</h2>
           <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
-            <button
-              className="btn-3d"
-              onClick={() => setResults({
-                title: session?.title || 'منصة أبطال المسابقة 🏆',
-                total_questions: 3,
-                total_players: 3,
-                results: []
-              })}
-              style={{ padding: '8px 18px', fontSize: '13px' }}
-            >
-              عرض المنصة مباشرة 🚀
-            </button>
             <button
               className="btn-3d"
               onClick={() => setMode('home')}
@@ -3100,76 +3154,37 @@ function Leaderboard({ session, setMode, player }) {
 
   const allPlayers = results.results || [];
 
-  // Helper to enrich player with level, accuracy, avg speed and role
-  const enrichPlayer = (p, defaultRank, fallbackData) => {
-    if (!p) {
-      return {
-        id: `mock-${defaultRank}`,
-        name: fallbackData.name,
-        role: fallbackData.role,
-        avatar: fallbackData.avatar,
-        score: fallbackData.score,
-        level: fallbackData.level,
-        accuracy: fallbackData.accuracy,
-        avgTime: fallbackData.avgTime,
-        isMock: true,
-      };
-    }
+  // Helper to enrich player with level, accuracy, avg speed and role (computed from real data only)
+  const enrichPlayer = (p) => {
+    if (!p) return null;
     const avatarObj = getAvatar(p.avatar);
     const scoreVal = p.score || 0;
     const calcLevel = Math.max(1, Math.floor(scoreVal / 450) + 1);
-    const calcAccuracy = p.accuracy ?? (p.total_answers > 0 ? Math.round((p.correct_answers / p.total_answers) * 100) : 95);
-    const speedFallback = defaultRank === 1 ? '0.9s' : defaultRank === 2 ? '1.1s' : '1.4s';
+    const calcAccuracy = p.accuracy ?? (p.total_answers > 0 ? Math.round((p.correct_answers / p.total_answers) * 100) : 0);
 
     return {
       ...p,
-      role: avatarObj.role || (defaultRank === 1 ? 'CHAMPION' : defaultRank === 2 ? 'CREATIVE MASTER' : 'GALAXY SCOUT'),
+      role: avatarObj.role || '',
       level: calcLevel,
       accuracy: calcAccuracy,
-      avgTime: p.avg_time ? `${p.avg_time}s` : speedFallback,
-      isMock: false,
+      avgTime: p.avg_time ? `${p.avg_time}s` : '—',
+      isEmpty: false,
     };
   };
 
-  // Top 3 Podium slots (with companion bots matching user's image if testing alone)
-  const top1 = enrichPlayer(allPlayers[0], 1, {
-    name: 'عمر النجم',
-    role: 'OMAR THE STAR',
-    avatar: 'astronaut',
-    score: 9450,
-    level: 22,
-    accuracy: 100,
-    avgTime: '0.9s',
-  });
-
-  const top2 = enrichPlayer(allPlayers[1], 2, {
-    name: 'سارة المبدعة',
-    role: 'SARAH CREATIVE',
-    avatar: 'artist',
-    score: 8820,
-    level: 18,
-    accuracy: 95,
-    avgTime: '1.1s',
-  });
-
-  const top3 = enrichPlayer(allPlayers[2], 3, {
-    name: 'ريان البطل',
-    role: 'RAYAN HERO',
-    avatar: 'superhero',
-    score: 7990,
-    level: 15,
-    accuracy: 90,
-    avgTime: '1.4s',
-  });
+  const top1 = enrichPlayer(allPlayers[0]);
+  const top2 = enrichPlayer(allPlayers[1]);
+  const top3 = enrichPlayer(allPlayers[2]);
 
   // Remaining challengers (rank 4+) or all players
-  const restPlayers = allPlayers.slice(3).map((p, idx) => enrichPlayer(p, idx + 4, {}));
-  const displayChallengers = showAllPlayers ? allPlayers.map((p, idx) => enrichPlayer(p, idx + 1, {})) : restPlayers;
+  const restPlayers = allPlayers.slice(3).map((p) => enrichPlayer(p));
+  const displayChallengers = showAllPlayers ? allPlayers.map((p) => enrichPlayer(p)) : restPlayers;
 
   // Filtered challengers
   const filteredChallengers = displayChallengers.filter(p => {
+    if (!p) return false;
     if (selectedFilter === 'perfect') return p.accuracy === 100;
-    if (selectedFilter === 'speed') return parseFloat(p.avgTime) <= 1.2;
+    if (selectedFilter === 'speed') return p.avg_time != null && parseFloat(p.avg_time) <= 1.2;
     if (selectedFilter === 'brain') return p.level >= 10;
     if (selectedFilter === 'streak') return (p.streak || 0) >= 3;
     return true;
@@ -3196,7 +3211,7 @@ function Leaderboard({ session, setMode, player }) {
           </div>
           <h1 className="hof-main-title">Final Match Champions Podium</h1>
           <p className="hof-subtitle">
-            {results.title || 'Grade 6-B Science Arena'} • {results.total_questions || 5} Rounds Solved • {Math.max(allPlayers.length, 3)} Combatants
+            {results.title || 'Tecorbi Game 🎮'} • {results.total_questions ? `${results.total_questions} Rounds Solved` : ''} • {allPlayers.length} Combatants
           </p>
         </div>
 
@@ -3244,30 +3259,42 @@ function Leaderboard({ session, setMode, player }) {
 
             <div className="hof-avatar-anchor">
               <div className="hof-avatar-circle circle-silver">
-                {getAvatar(top2.avatar).image ? (
-                  <img src={getAvatar(top2.avatar).image} alt={top2.name} className="hof-avatar-3d-champ" />
+                {top2 ? (
+                  getAvatar(top2.avatar).image ? (
+                    <img src={getAvatar(top2.avatar).image} alt={top2.name} className="hof-avatar-3d-champ" />
+                  ) : (
+                    <span className="hof-avatar-emoji">{getAvatar(top2.avatar).emoji}</span>
+                  )
                 ) : (
-                  <span className="hof-avatar-emoji">{getAvatar(top2.avatar).emoji}</span>
+                  <span className="hof-avatar-emoji" style={{ opacity: 0.3 }}>—</span>
                 )}
               </div>
               <span className="hof-corner-pin pin-silver" title="Silver Medal">🥈</span>
             </div>
 
             <div className="hof-player-info">
-              <strong className="hof-player-name">{top2.name}</strong>
-              <span className="hof-player-role role-silver">{top2.role}</span>
-              <div className="hof-score-chip chip-silver">
-                <strong>{top2.score.toLocaleString()} XP</strong>
-                <span className="hof-dot">•</span>
-                <span>Lvl {top2.level}</span>
-              </div>
+              <strong className="hof-player-name">{top2 ? top2.name : '—'}</strong>
+              <span className="hof-player-role role-silver">{top2 ? top2.role : '—'}</span>
+              {top2 && (
+                <div className="hof-score-chip chip-silver">
+                  <strong>{top2.score.toLocaleString()} XP</strong>
+                  <span className="hof-dot">•</span>
+                  <span>Lvl {top2.level}</span>
+                </div>
+              )}
             </div>
 
             {/* Stat row above podium */}
-            <div className="hof-stats-row">
-              <span className="stat-label">ACCURACY: {top2.accuracy}%</span>
-              <span className="stat-label">AVG: {top2.avgTime}</span>
-            </div>
+            {top2 ? (
+              <div className="hof-stats-row">
+                <span className="stat-label">ACCURACY: {top2.accuracy}%</span>
+                <span className="stat-label">AVG: {top2.avgTime}</span>
+              </div>
+            ) : (
+              <div className="hof-stats-row" style={{ visibility: 'hidden' }}>
+                <span className="stat-label">—</span>
+              </div>
+            )}
 
             {/* Solid Dark Podium Block #2 with Neon Cyan bottom bar */}
             <div className="hof-podium-block block-silver">
@@ -3286,34 +3313,46 @@ function Leaderboard({ session, setMode, player }) {
             <div className="hof-avatar-anchor">
               <div className="hof-avatar-circle circle-champion">
                 <span className="champion-gold-aura" />
-                {getAvatar(top1.avatar).image ? (
-                  <img src={getAvatar(top1.avatar).image} alt={top1.name} className="hof-avatar-3d-champ" />
+                {top1 ? (
+                  getAvatar(top1.avatar).image ? (
+                    <img src={getAvatar(top1.avatar).image} alt={top1.name} className="hof-avatar-3d-champ" />
+                  ) : (
+                    <span className="hof-avatar-emoji emoji-champ">{getAvatar(top1.avatar).emoji}</span>
+                  )
                 ) : (
-                  <span className="hof-avatar-emoji emoji-champ">{getAvatar(top1.avatar).emoji}</span>
+                  <span className="hof-avatar-emoji" style={{ opacity: 0.3 }}>—</span>
                 )}
               </div>
               <span className="hof-corner-pin pin-gold" title="Gold Star">⭐</span>
             </div>
 
             <div className="hof-player-info">
-              <strong className="hof-player-name name-champion">{top1.name}</strong>
-              <span className="hof-player-role role-champion">{top1.role}</span>
-              <div className="hof-score-chip chip-champion">
-                <strong>{top1.score.toLocaleString()} XP</strong>
-                <span className="hof-dot">•</span>
-                <span>Lvl {top1.level}</span>
-              </div>
+              <strong className="hof-player-name name-champion">{top1 ? top1.name : '—'}</strong>
+              <span className="hof-player-role role-champion">{top1 ? top1.role : '—'}</span>
+              {top1 && (
+                <div className="hof-score-chip chip-champion">
+                  <strong>{top1.score.toLocaleString()} XP</strong>
+                  <span className="hof-dot">•</span>
+                  <span>Lvl {top1.level}</span>
+                </div>
+              )}
             </div>
 
             {/* Stat row above champion podium */}
-            <div className="hof-stats-row row-champion">
-              <span className="stat-pill-perfect">
-                {top1.accuracy === 100 ? `${results.total_questions}/${results.total_questions} PERFECT` : `ACCURACY: ${top1.accuracy}%`}
-              </span>
-              <span className="stat-label gold-label">
-                AVG: {top1.avgTime} <Zap size={13} fill="currentColor" />
-              </span>
-            </div>
+            {top1 ? (
+              <div className="hof-stats-row row-champion">
+                <span className="stat-pill-perfect">
+                  {top1.accuracy === 100 && results.total_questions ? `${results.total_questions}/${results.total_questions} PERFECT` : `ACCURACY: ${top1.accuracy}%`}
+                </span>
+                <span className="stat-label gold-label">
+                  AVG: {top1.avgTime} <Zap size={13} fill="currentColor" />
+                </span>
+              </div>
+            ) : (
+              <div className="hof-stats-row row-champion" style={{ visibility: 'hidden' }}>
+                <span className="stat-label">—</span>
+              </div>
+            )}
 
             {/* Solid Dark Podium Block #1 with Glowing Golden bottom bar */}
             <div className="hof-podium-block block-champion">
@@ -3331,30 +3370,42 @@ function Leaderboard({ session, setMode, player }) {
 
             <div className="hof-avatar-anchor">
               <div className="hof-avatar-circle circle-bronze">
-                {getAvatar(top3.avatar).image ? (
-                  <img src={getAvatar(top3.avatar).image} alt={top3.name} className="hof-avatar-3d-champ" />
+                {top3 ? (
+                  getAvatar(top3.avatar).image ? (
+                    <img src={getAvatar(top3.avatar).image} alt={top3.name} className="hof-avatar-3d-champ" />
+                  ) : (
+                    <span className="hof-avatar-emoji">{getAvatar(top3.avatar).emoji}</span>
+                  )
                 ) : (
-                  <span className="hof-avatar-emoji">{getAvatar(top3.avatar).emoji}</span>
+                  <span className="hof-avatar-emoji" style={{ opacity: 0.3 }}>—</span>
                 )}
               </div>
               <span className="hof-corner-pin pin-bronze" title="Bronze Bolt">⚡</span>
             </div>
 
             <div className="hof-player-info">
-              <strong className="hof-player-name">{top3.name}</strong>
-              <span className="hof-player-role role-bronze">{top3.role}</span>
-              <div className="hof-score-chip chip-bronze">
-                <strong>{top3.score.toLocaleString()} XP</strong>
-                <span className="hof-dot">•</span>
-                <span>Lvl {top3.level}</span>
-              </div>
+              <strong className="hof-player-name">{top3 ? top3.name : '—'}</strong>
+              <span className="hof-player-role role-bronze">{top3 ? top3.role : '—'}</span>
+              {top3 && (
+                <div className="hof-score-chip chip-bronze">
+                  <strong>{top3.score.toLocaleString()} XP</strong>
+                  <span className="hof-dot">•</span>
+                  <span>Lvl {top3.level}</span>
+                </div>
+              )}
             </div>
 
             {/* Stat row above podium */}
-            <div className="hof-stats-row">
-              <span className="stat-label">ACCURACY: {top3.accuracy}%</span>
-              <span className="stat-label">AVG: {top3.avgTime}</span>
-            </div>
+            {top3 ? (
+              <div className="hof-stats-row">
+                <span className="stat-label">ACCURACY: {top3.accuracy}%</span>
+                <span className="stat-label">AVG: {top3.avgTime}</span>
+              </div>
+            ) : (
+              <div className="hof-stats-row" style={{ visibility: 'hidden' }}>
+                <span className="stat-label">—</span>
+              </div>
+            )}
 
             {/* Solid Dark Podium Block #3 with Neon Amber bottom bar */}
             <div className="hof-podium-block block-bronze">
@@ -3477,10 +3528,12 @@ function Leaderboard({ session, setMode, player }) {
           <span>العودة للصفحة الرئيسية</span>
         </button>
 
-        <button className="btn-hof btn-hof-reset" onClick={resetGame}>
-          <RotateCcw size={18} />
-          <span>إعادة تشغيل المسابقة 🔄</span>
-        </button>
+        {isTeacher && (
+          <button className="btn-hof btn-hof-reset" onClick={resetGame}>
+            <RotateCcw size={18} />
+            <span>إعادة تشغيل المسابقة 🔄</span>
+          </button>
+        )}
       </footer>
     </main>
   );

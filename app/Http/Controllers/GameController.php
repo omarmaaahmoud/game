@@ -6,12 +6,11 @@ use App\Models\GameSession;
 use App\Models\Player;
 use App\Models\Answer;
 use App\Events\StudentAnswered;
-use App\Events\LeaderboardUpdated;
-use App\Events\ResultsRevealed;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 class GameController extends Controller
 {
@@ -50,6 +49,38 @@ class GameController extends Controller
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
 
+        // 1. Check player token and player ownership FIRST (S1.4)
+        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        if (!$playerToken) {
+            return response()->json([
+                'error' => 'Player authorization required',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'player_id' => 'required|integer',
+            'choice_id' => 'required|integer',
+            'time_taken' => 'nullable|numeric|min:0', // accepted for backward compatibility, ignored
+        ]);
+
+        $player = Player::where('id', $validated['player_id'])->first();
+        if (!$player || (int) $player->game_session_id !== (int) $session->id) {
+            return response()->json([
+                'error' => 'Unauthorized player action',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        $providedPlayerHash = hash('sha256', (string) $playerToken);
+        if (!$player->token_hash || !hash_equals($player->token_hash, $providedPlayerHash)) {
+            return response()->json([
+                'error' => 'Unauthorized player action',
+                'code' => 'UNAUTHORIZED_PLAYER',
+            ], 403);
+        }
+
+        // 2. Check game status
         if ($session->status !== 'active' || $session->question_state !== 'answering') {
             return response()->json([
                 'error' => 'Game is not active',
@@ -57,15 +88,7 @@ class GameController extends Controller
             ], 422);
         }
 
-        $validated = $request->validate([
-            'player_id' => 'required|integer|exists:players,id',
-            'choice_id' => 'required|integer|exists:choices,id',
-            'time_taken' => 'nullable|numeric|min:0', // accepted for backward compatibility, ignored
-        ]);
-
-        $nowMs = (int) round(microtime(true) * 1000);
         $startedAt = $session->question_started_at;
-
         if ($startedAt === null) {
             return response()->json([
                 'error' => 'Question is not active for answering',
@@ -81,7 +104,9 @@ class GameController extends Controller
             ], 422);
         }
 
-        // Reject answers received before the official server-side question start
+        $nowMs = (int) round(microtime(true) * 1000);
+
+        // Reject answers received before official server-side question start
         if ($nowMs < $startedAt) {
             return response()->json([
                 'error' => 'Question has not started yet',
@@ -101,30 +126,6 @@ class GameController extends Controller
             ], 422);
         }
 
-        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
-        if (!$playerToken) {
-            return response()->json([
-                'error' => 'Player authorization required',
-                'code' => 'UNAUTHORIZED_PLAYER',
-            ], 403);
-        }
-
-        $player = Player::where('id', $validated['player_id'])->first();
-        if (!$player || (int) $player->game_session_id !== (int) $session->id) {
-            return response()->json([
-                'error' => 'Unauthorized player action',
-                'code' => 'UNAUTHORIZED_PLAYER',
-            ], 403);
-        }
-
-        $providedPlayerHash = hash('sha256', (string) $playerToken);
-        if (!$player->token_hash || !hash_equals($player->token_hash, $providedPlayerHash)) {
-            return response()->json([
-                'error' => 'Unauthorized player action',
-                'code' => 'UNAUTHORIZED_PLAYER',
-            ], 403);
-        }
-
         // Check if choice belongs to this question
         $choice = $question->choices()->find($validated['choice_id']);
         if (!$choice) {
@@ -135,11 +136,10 @@ class GameController extends Controller
         }
 
         // Compute time_taken purely on server clamped to [0, time_limit]
-        // Since $nowMs >= $startedAt, $elapsedSeconds is non-negative
         $elapsedSeconds = ($nowMs - $startedAt) / 1000;
         $timeTaken = min($elapsedSeconds, (float) $question->time_limit);
 
-        $isCorrect = $choice->is_correct;
+        $isCorrect = (bool) $choice->is_correct;
         $points = 0;
 
         if ($isCorrect) {
@@ -149,29 +149,10 @@ class GameController extends Controller
             $points = (int) round(500 + ($speedRatio * 500)); // Max 1000 points
         }
 
-        // Execute DB operations inside an atomic transaction to prevent race conditions & double-scoring
+        // Atomic insert + atomic score increment to prevent race conditions & double scoring (S1.3)
         try {
-            $transactionResult = DB::transaction(function () use ($player, $question, $choice, $isCorrect, $timeTaken, $points) {
-                // Check if already answered within lock
-                $existing = Answer::where('player_id', $player->id)
-                    ->where('question_id', $question->id)
-                    ->first();
-
-                if ($existing) {
-                    return ['duplicate' => true];
-                }
-
-                if ($isCorrect) {
-                    $newStreak = $player->streak + 1;
-                    $player->update([
-                        'score' => $player->score + $points,
-                        'streak' => $newStreak,
-                    ]);
-                } else {
-                    $player->update(['streak' => 0]);
-                }
-
-                $answer = Answer::create([
+            DB::transaction(function () use ($player, $question, $choice, $isCorrect, $timeTaken, $points) {
+                Answer::create([
                     'player_id' => $player->id,
                     'question_id' => $question->id,
                     'choice_id' => $choice->id,
@@ -181,47 +162,39 @@ class GameController extends Controller
                     'answered_at' => now(),
                 ]);
 
-                return ['answer' => $answer];
+                if ($isCorrect) {
+                    Player::whereKey($player->id)->increment('score', $points);
+                    Player::whereKey($player->id)->increment('streak', 1);
+                } else {
+                    Player::whereKey($player->id)->update(['streak' => 0]);
+                }
             });
-
-            if (!empty($transactionResult['duplicate'])) {
-                return response()->json(['error' => 'Already answered this question'], 422);
-            }
+        } catch (UniqueConstraintViolationException $e) {
+            return response()->json([
+                'error' => 'Already answered this question',
+                'code' => 'ALREADY_ANSWERED',
+            ], 409);
         } catch (QueryException $e) {
-            // Unique constraint violation handled cleanly
-            return response()->json(['error' => 'Already answered this question'], 422);
+            if (str_contains($e->getMessage(), 'UNIQUE') || str_contains($e->getMessage(), 'unique')) {
+                return response()->json([
+                    'error' => 'Already answered this question',
+                    'code' => 'ALREADY_ANSWERED',
+                ], 409);
+            }
+            throw $e;
         }
 
-        // Realtime event broadcasts AFTER database transaction successfully committed!
         $answeredCount = Answer::where('question_id', $question->id)->count();
         $totalPlayers = $session->players()->count();
 
+        // Broadcast StudentAnswered WITHOUT player_name for privacy (S1.5)
         broadcast(new StudentAnswered(
             $session->pin,
             $player->id,
-            $player->name,
+            '',
             $answeredCount,
             $totalPlayers
         ));
-
-        $leaderboard = $session->players()
-            ->orderByDesc('score')
-            ->take(12)
-            ->get(['id', 'name', 'avatar', 'score', 'streak'])
-            ->values()
-            ->map(function ($p, $index) {
-                return [
-                    'rank' => $index + 1,
-                    'id' => $p->id,
-                    'name' => $p->name,
-                    'avatar' => $p->avatar,
-                    'score' => $p->score,
-                    'streak' => $p->streak,
-                ];
-            })
-            ->all();
-
-        broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
 
         // When QUIZ_REVEAL_ON_ANSWER is false (default), do not reveal answer or score early
         $revealOnAnswer = (bool) config('quiz.reveal_on_answer', false);
@@ -232,17 +205,18 @@ class GameController extends Controller
             ]);
         }
 
+        $freshPlayer = $player->fresh();
         return response()->json([
             'is_correct' => $isCorrect,
             'points_earned' => $points,
-            'total_score' => $player->fresh()->score,
-            'streak' => $player->fresh()->streak,
+            'total_score' => $freshPlayer->score,
+            'streak' => $freshPlayer->streak,
             'correct_choice_id' => $choice->question->choices()->where('is_correct', true)->first()?->id,
             'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
-    // Student gets their own result for the current question ONLY after reveal
+    // Student gets their own result for the current question ONLY after reveal (S1.6 with question_id)
     public function myResult(Request $request, string $pin): JsonResponse
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
@@ -267,20 +241,46 @@ class GameController extends Controller
             ], 403);
         }
 
-        $question = $session->currentQuestion();
-        if (!$question) {
-            return response()->json([
-                'error' => 'No active question',
-                'code' => 'NO_QUESTION',
-            ], 422);
-        }
+        $questionId = $request->query('question_id');
+        $currentQuestion = $session->currentQuestion();
 
-        // Before reveal, return 409 Conflict
-        if ($session->question_state !== 'revealed') {
-            return response()->json([
-                'error' => 'Question result is not revealed yet',
-                'code' => 'NOT_REVEALED',
-            ], 409);
+        if ($questionId) {
+            $targetQuestion = $session->questions()->find($questionId);
+            if (!$targetQuestion) {
+                return response()->json([
+                    'error' => 'Question not found in session',
+                    'code' => 'NO_QUESTION',
+                ], 422);
+            }
+            if ($currentQuestion && (int) $targetQuestion->order > (int) $currentQuestion->order) {
+                return response()->json([
+                    'error' => 'Question is in future',
+                    'code' => 'NOT_REVEALED',
+                ], 409);
+            }
+            if ($currentQuestion && (int) $targetQuestion->id === (int) $currentQuestion->id) {
+                if ($session->question_state !== 'revealed') {
+                    return response()->json([
+                        'error' => 'Question result is not revealed yet',
+                        'code' => 'NOT_REVEALED',
+                    ], 409);
+                }
+            }
+            $question = $targetQuestion;
+        } else {
+            $question = $currentQuestion;
+            if (!$question) {
+                return response()->json([
+                    'error' => 'No active question',
+                    'code' => 'NO_QUESTION',
+                ], 422);
+            }
+            if ($session->question_state !== 'revealed') {
+                return response()->json([
+                    'error' => 'Question result is not revealed yet',
+                    'code' => 'NOT_REVEALED',
+                ], 409);
+            }
         }
 
         $correctChoice = $question->choices()->where('is_correct', true)->first();
@@ -313,14 +313,29 @@ class GameController extends Controller
         ]);
     }
 
-    // Get leaderboard
-    public function leaderboard(string $pin): JsonResponse
+    // Get current leaderboard with my_rank and my_score (S1.5)
+    public function leaderboard(Request $request, string $pin): JsonResponse
     {
         $session = GameSession::where('pin', $pin)->firstOrFail();
 
         $players = $session->players()
             ->orderByDesc('score')
+            ->take(12)
             ->get(['id', 'name', 'avatar', 'score', 'streak']);
+
+        $myRank = null;
+        $myScore = null;
+        $playerToken = $request->header('X-Player-Token') ?: $request->input('player_token');
+        if ($playerToken) {
+            $tokenHash = hash('sha256', (string) $playerToken);
+            $currentPlayer = Player::where('game_session_id', $session->id)
+                ->where('token_hash', $tokenHash)
+                ->first();
+            if ($currentPlayer) {
+                $myScore = (int) $currentPlayer->score;
+                $myRank = $session->players()->where('score', '>', $currentPlayer->score)->count() + 1;
+            }
+        }
 
         return response()->json([
             'leaderboard' => $players->values()->map(function ($player, $index) {
@@ -332,44 +347,100 @@ class GameController extends Controller
                     'score' => $player->score,
                     'streak' => $player->streak,
                 ];
-            }),
+            })->all(),
+            'my_rank' => $myRank,
+            'my_score' => $myScore,
+            'total_players' => $session->players()->count(),
             'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);
     }
 
-    // Get final results
-    public function results(string $pin): JsonResponse
+    // Teacher inspects question answer distribution stats (S1.1)
+    public function questionStats(string $pin): JsonResponse
     {
-        $session = GameSession::where('pin', $pin)->with(['questions.choices', 'players.answers'])->firstOrFail();
+        $session = GameSession::where('pin', $pin)->firstOrFail();
 
-        $players = $session->players->sortByDesc('score')->values()->map(function ($player, $index) {
-            $totalAnswers = $player->answers->count();
-            $correctAnswers = $player->answers->where('is_correct', true)->count();
+        if ($session->question_state !== 'revealed') {
+            return response()->json([
+                'error' => 'Question is not revealed yet',
+                'code' => 'NOT_REVEALED',
+            ], 409);
+        }
 
+        $question = $session->currentQuestion();
+        if (!$question) {
+            return response()->json([
+                'error' => 'No active question',
+                'code' => 'NO_QUESTION',
+            ], 404);
+        }
+
+        $counts = Answer::where('question_id', $question->id)
+            ->select('choice_id', DB::raw('count(*) as count'))
+            ->groupBy('choice_id')
+            ->pluck('count', 'choice_id')
+            ->all();
+
+        $stats = $question->choices->map(function ($choice) use ($counts) {
             return [
-                'rank' => $index + 1,
-                'id' => $player->id,
-                'name' => $player->name,
-                'avatar' => $player->avatar,
-                'score' => $player->score,
-                'total_answers' => $totalAnswers,
-                'correct_answers' => $correctAnswers,
-                'accuracy' => $totalAnswers > 0 ? round(($correctAnswers / $totalAnswers) * 100) : 0,
+                'choice_id' => $choice->id,
+                'choice_text' => $choice->choice_text,
+                'choice_text_ar' => $choice->choice_text_ar,
+                'is_correct' => (bool) $choice->is_correct,
+                'count' => $counts[$choice->id] ?? 0,
             ];
         });
 
-        broadcast(new ResultsRevealed(
-            $session->pin,
-            $session->title,
-            $session->questions->count(),
-            $session->players->count(),
-            $players->all()
-        ));
+        return response()->json([
+            'question_id' => $question->id,
+            'correct_choice_id' => $question->choices->where('is_correct', true)->first()?->id,
+            'total_answers' => array_sum($counts),
+            'stats' => $stats,
+            'server_now_ms' => (int) round(microtime(true) * 1000),
+        ]);
+    }
+
+    // Get final results (S1.1 - 409 if not completed, NO broadcasts on GET)
+    public function results(string $pin): JsonResponse
+    {
+        $session = GameSession::where('pin', $pin)->firstOrFail();
+
+        if ($session->status !== 'completed') {
+            return response()->json([
+                'error' => 'Game is not completed',
+                'code' => 'NOT_COMPLETED',
+            ], 409);
+        }
+
+        $players = $session->players()
+            ->with('answers')
+            ->orderByDesc('score')
+            ->get()
+            ->values()
+            ->map(function ($player, $index) {
+                $totalAnswers = $player->answers->count();
+                $correctAnswers = $player->answers->where('is_correct', true)->count();
+                $avgTime = $totalAnswers > 0 ? round($player->answers->avg('time_taken'), 2) : 0;
+                $accuracy = $totalAnswers > 0 ? round(($correctAnswers / $totalAnswers) * 100) : 0;
+
+                return [
+                    'rank' => $index + 1,
+                    'id' => $player->id,
+                    'name' => $player->name,
+                    'avatar' => $player->avatar,
+                    'score' => (int) $player->score,
+                    'streak' => (int) $player->streak,
+                    'total_answers' => $totalAnswers,
+                    'correct_answers' => $correctAnswers,
+                    'avg_time' => $avgTime,
+                    'accuracy' => $accuracy,
+                ];
+            });
 
         return response()->json([
             'title' => $session->title,
-            'total_questions' => $session->questions->count(),
-            'total_players' => $session->players->count(),
+            'total_questions' => $session->questions()->count(),
+            'total_players' => $session->players()->count(),
             'results' => $players,
             'server_now_ms' => (int) round(microtime(true) * 1000),
         ]);

@@ -9,6 +9,7 @@ use App\Events\PlayerJoined;
 use App\Events\GameStarted;
 use App\Events\QuestionChanged;
 use App\Events\AnswerRevealed;
+use App\Events\LeaderboardUpdated;
 use App\Events\GameFinished;
 use App\Events\SessionReset;
 use Illuminate\Http\Request;
@@ -464,6 +465,25 @@ class SessionController extends Controller
         $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
 
         broadcast(new AnswerRevealed($session->pin, $correctChoiceId, $currentQuestion?->id));
+
+        $leaderboard = $session->players()
+            ->orderByDesc('score')
+            ->take(12)
+            ->get(['id', 'name', 'avatar', 'score', 'streak'])
+            ->values()
+            ->map(function ($p, $index) {
+                return [
+                    'rank' => $index + 1,
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'avatar' => $p->avatar,
+                    'score' => $p->score,
+                    'streak' => $p->streak,
+                ];
+            })
+            ->all();
+
+        broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
 
         return response()->json([
             'question_state' => 'revealed',

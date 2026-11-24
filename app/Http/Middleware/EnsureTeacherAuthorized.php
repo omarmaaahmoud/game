@@ -16,14 +16,21 @@ class EnsureTeacherAuthorized
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $pin = (string) (
-            $request->route('pin')
-            ?? $request->input('pin')
-            ?? ($request->segment(2) === 'sessions' ? $request->segment(3) : null)
-            ?? ($request->segment(1) === 'sessions' ? $request->segment(2) : null)
-        );
+        $pin = $request->route('pin');
 
-        $session = GameSession::where('pin', $pin)->first();
+        // Fallback for tests invoking middleware directly without routing
+        if ($pin === null && $request->route() === null) {
+            $pin = $request->segment(2) === 'sessions' ? $request->segment(3) : $request->segment(2);
+        }
+
+        if (empty($pin)) {
+            return response()->json([
+                'error' => 'PIN is required',
+                'code' => 'INVALID_PIN',
+            ], 400);
+        }
+
+        $session = GameSession::where('pin', (string) $pin)->first();
 
         if (!$session) {
             return response()->json([
@@ -45,10 +52,8 @@ class EnsureTeacherAuthorized
             ], 403);
         }
 
-        // Extract token from X-Teacher-Token, Authorization Bearer, or request body
-        $token = $request->header('X-Teacher-Token')
-            ?: $request->bearerToken()
-            ?: $request->input('teacher_token');
+        // Extract token from X-Teacher-Token or Authorization Bearer ONLY (S1.7)
+        $token = $request->header('X-Teacher-Token') ?: $request->bearerToken();
 
         if (!$token) {
             return response()->json([

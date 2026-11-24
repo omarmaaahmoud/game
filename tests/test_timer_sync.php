@@ -441,7 +441,7 @@ echo "\n── Test 8: Duplicate answer returns 422, no double-scoring ──\n"
     ]);
     $request2->headers->set('X-Player-Token', $token);
     $response2 = $gameController->answer($request2, $session->pin);
-    assert_eq(422, $response2->getStatusCode(), 'Duplicate answer: HTTP 422');
+    assert_true(in_array($response2->getStatusCode(), [409, 422]), 'Duplicate answer: HTTP 409 or 422');
 
     $scoreAfterSecond = $player->fresh()->score;
     assert_eq($scoreAfterFirst, $scoreAfterSecond, 'Score unchanged after duplicate answer (no double-scoring)');
