@@ -6909,40 +6909,34 @@ html, body {
   right: -12px;
 }
 .td-dot-left {
-  bottom: 112px;
+  bottom: 108px;
   left: -12px;
 }
 
-/* Purple Wavy Decoration Layers */
-.td-wave-deco {
-  position: absolute;
+/* Flowing Viewport Corner Purple Waves */
+.td-viewport-waves {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
   z-index: 0;
-  border-radius: 40% 60% 55% 45% / 55% 40% 60% 45%;
+  overflow: hidden;
 }
-.td-wave-1 {
-  width: 420px;
-  height: 340px;
-  bottom: -40px;
-  right: -80px;
-  background: linear-gradient(135deg, rgba(167, 139, 250, 0.22) 0%, rgba(124, 58, 237, 0.10) 60%, transparent 100%);
-  border-radius: 42% 58% 48% 52% / 54% 46% 54% 46%;
+.td-corner-wave {
+  position: absolute;
+  bottom: 0;
+  display: block;
 }
-.td-wave-2 {
-  width: 300px;
-  height: 240px;
-  bottom: 20px;
-  right: -30px;
-  background: linear-gradient(160deg, rgba(139, 92, 246, 0.18) 0%, rgba(109, 40, 217, 0.08) 70%, transparent 100%);
-  border-radius: 55% 45% 52% 48% / 48% 52% 48% 52%;
+.td-corner-wave-right {
+  right: 0;
+  width: min(44vw, 620px);
+  height: min(68vh, 520px);
 }
-.td-wave-3 {
-  width: 220px;
-  height: 180px;
-  top: 30px;
-  left: -60px;
-  background: linear-gradient(200deg, rgba(167, 139, 250, 0.14) 0%, rgba(196, 181, 253, 0.08) 80%, transparent 100%);
-  border-radius: 48% 52% 60% 40% / 50% 55% 45% 50%;
+.td-corner-wave-left {
+  left: 0;
+  width: min(32vw, 440px);
+  height: min(56vh, 440px);
 }
 
 .td-hero-grid {
@@ -7210,11 +7204,13 @@ html, body {
 .td-mobile-glass-bar {
   position: relative;
   z-index: 1;
-  background: rgba(255, 255, 255, 0.78);
+  max-width: 780px;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.48);
   backdrop-filter: blur(14px);
-  border: 1.5px solid rgba(124, 58, 237, 0.16);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
   border-radius: 999px;
-  padding: 16px 26px;
+  padding: 15px 26px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7265,21 +7261,21 @@ html, body {
   gap: 8px;
   padding: 10px 22px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
-  border: none;
-  color: #ffffff;
+  background: rgba(224, 242, 254, 0.72);
+  border: 1.5px solid #0ea5e9;
+  color: #0284c7;
   font-size: 14px;
   font-weight: 900;
   cursor: pointer;
   flex-shrink: 0;
-  box-shadow: 0 6px 16px rgba(91, 33, 182, 0.28);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.12);
   transition: all 0.18s ease;
 }
 .td-copy-outline-btn:hover {
-  background: linear-gradient(135deg, #6d28d9 0%, #4c1d95 100%);
+  background: #0ea5e9;
   color: #ffffff;
   transform: translateY(-2px);
-  box-shadow: 0 10px 22px rgba(91, 33, 182, 0.38);
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.24);
 }
 
 @media (max-width: 900px) {

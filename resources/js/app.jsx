@@ -91,10 +91,11 @@ let currentWifiIp = '192.168.1.2';
 
 const getMobileUrl = () => {
   const host = window.location.hostname;
-  // If accessing from phone or external IP, use that host directly
+  const proto = window.location.protocol === 'https:' ? 'https:' : 'http:';
+  // If accessing from phone or deployed domain, use that host directly without forcing :8000
   if (host && host !== 'localhost' && host !== '127.0.0.1') {
-    const port = window.location.port ? `:${window.location.port}` : ':8000';
-    return `http://${host}${port}`;
+    const port = window.location.port ? `:${window.location.port}` : '';
+    return `${proto}//${host}${port}`;
   }
   const port = window.location.port ? `:${window.location.port}` : ':8000';
   return `http://${currentWifiIp}${port}`;
@@ -1177,11 +1178,61 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
 
   return (
     <main className="teacher-dashboard-layout td-studio-shell">
+      {/* Flowing Viewport Corner Waves (matching mockup) */}
+      <div className="td-viewport-waves" aria-hidden="true">
+        <svg className="td-corner-wave td-corner-wave-right" viewBox="0 0 600 520" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="tdWaveGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ddd6fe" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0.32" />
+            </linearGradient>
+            <linearGradient id="tdWaveGrad2" x1="15%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.52" />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.46" />
+            </linearGradient>
+            <linearGradient id="tdWaveGrad3" x1="20%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.56" />
+              <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.62" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M600,45 C470,70 435,205 330,285 C235,358 125,355 30,520 L600,520 Z"
+            fill="url(#tdWaveGrad1)"
+          />
+          <path
+            d="M600,175 C495,180 455,280 375,355 C300,425 225,430 165,520 L600,520 Z"
+            fill="url(#tdWaveGrad2)"
+          />
+          <path
+            d="M600,325 C530,335 495,410 430,455 C395,480 365,498 340,520 L600,520 Z"
+            fill="url(#tdWaveGrad3)"
+          />
+        </svg>
+
+        <svg className="td-corner-wave td-corner-wave-left" viewBox="0 0 460 460" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="tdWaveLeft1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ddd6fe" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0.18" />
+            </linearGradient>
+            <linearGradient id="tdWaveLeft2" x1="0%" y1="20%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.36" />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.22" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M0,40 C120,65 155,195 250,275 C325,338 390,375 430,460 L0,460 Z"
+            fill="url(#tdWaveLeft1)"
+          />
+          <path
+            d="M0,190 C90,210 130,305 210,375 C255,415 285,438 305,460 L0,460 Z"
+            fill="url(#tdWaveLeft2)"
+          />
+        </svg>
+      </div>
+
       <div className="td-dot-grid td-dot-right" aria-hidden="true" />
       <div className="td-dot-grid td-dot-left" aria-hidden="true" />
-      <div className="td-wave-deco td-wave-1" aria-hidden="true" />
-      <div className="td-wave-deco td-wave-2" aria-hidden="true" />
-      <div className="td-wave-deco td-wave-3" aria-hidden="true" />
 
       <div className="td-hero-grid">
         {/* Right Column (RTL Main Controls) */}
@@ -1282,10 +1333,7 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
           <Smartphone size={22} className="td-phone-icon" />
           <div className="td-mobile-texts">
             <strong>رابط الطلاب على الهواتف والأجهزة اللوحية (Mobile Link):</strong>
-            <p>
-              أعطِ هذا الرابط لطلابك في الفصل ليفتحوه من هواتفهم على نفس شبكة الواي فاي:{' '}
-              <code className="td-mobile-url-inline" dir="ltr">{getMobileUrl()}</code>
-            </p>
+            <p>أعطِ هذا الرابط للطلاب في الفصل ليفتحوه من هواتفهم على نفس شبكة الجوال.</p>
           </div>
         </div>
         <button type="button" className="td-copy-outline-btn" onClick={copyMobileLink}>
