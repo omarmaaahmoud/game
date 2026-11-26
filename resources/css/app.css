@@ -6909,7 +6909,7 @@ html, body {
   right: -12px;
 }
 .td-dot-left {
-  bottom: 108px;
+  bottom: 24px;
   left: -12px;
 }
 
@@ -6946,7 +6946,7 @@ html, body {
   grid-template-columns: 1fr 0.72fr;
   align-items: center;
   gap: 32px;
-  margin-bottom: 30px;
+  margin-bottom: 0;
 }
 
 .td-main-col {
@@ -7307,3 +7307,260 @@ html, body {
     text-align: center;
   }
 }
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   EXCEL IMPORT UI — TeacherCreate
+   ══════════════════════════════════════════════════════════════════════ */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
+
+.section-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.excel-import-card {
+  background: #f8f9ff;
+  border: 2px dashed rgba(99, 102, 241, 0.3);
+  border-radius: 20px;
+  padding: 22px 24px;
+  margin-bottom: 24px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.excel-import-card.is-dragging {
+  border-color: #6366f1;
+  background: #eff0ff;
+}
+
+.excel-import-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.excel-icon-disc {
+  width: 52px; height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 6px 16px rgba(34, 197, 94, 0.3);
+}
+
+.excel-import-copy strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 900;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+.excel-import-copy p {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.excel-import-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.excel-mode-switch {
+  display: flex;
+  background: #e2e8f0;
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+.excel-mode-pill {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.excel-mode-pill.is-active {
+  background: #ffffff;
+  color: #3925DE;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.excel-btn-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.excel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  border: none;
+  transition: all 0.18s ease;
+}
+.excel-btn-template {
+  background: #fff;
+  border: 1.5px solid rgba(99, 102, 241, 0.3);
+  color: #4f46e5;
+}
+.excel-btn-template:hover {
+  background: #eef2ff;
+  border-color: #6366f1;
+}
+.excel-btn-upload {
+  background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+}
+.excel-btn-upload:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.42);
+}
+
+.excel-feedback-box {
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.excel-feedback-box.is-success {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  color: #15803d;
+}
+.excel-feedback-box.is-error {
+  background: #fef2f2;
+  border: 1.5px solid #fca5a5;
+  color: #b91c1c;
+}
+.excel-feedback-box.is-partial {
+  background: #fffbeb;
+  border: 1.5px solid #fcd34d;
+  color: #92400e;
+}
+.excel-feedback-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-weight: 900;
+}
+.excel-feedback-list {
+  margin: 4px 0 0 20px;
+  padding: 0;
+  font-size: 12px;
+  opacity: 0.9;
+}
+.excel-feedback-list li {
+  margin-bottom: 2px;
+}
+
+/* ── Additional global mobile fixes ── */
+@media (max-width: 640px) {
+  .game-navbar {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .navbar-center-tag {
+    display: none;
+  }
+  .game-canvas {
+    padding: 16px 12px 48px;
+  }
+  .form-page-container {
+    padding: 0;
+  }
+  .form-card-container {
+    padding: 20px 16px;
+    border-radius: 20px;
+  }
+  .section-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .section-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .q-inputs-row {
+    flex-direction: column;
+    min-width: 0;
+  }
+  .qdb-header-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .form-bottom-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .btn-submit-game {
+    width: 100%;
+  }
+  .excel-import-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .excel-btn-row {
+    width: 100%;
+  }
+  .excel-btn {
+    flex: 1;
+    justify-content: center;
+  }
+  .td-studio-title {
+    font-size: clamp(18px, 5vw, 26px) !important;
+    white-space: normal !important;
+  }
+  .td-hero-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .td-art-col { order: -1; }
+  .td-books-trophy-img { max-width: 220px !important; }
+  .td-main-col {
+    align-items: center !important;
+    text-align: center !important;
+  }
+  .td-top-pills-row {
+    justify-content: center !important;
+  }
+  .td-corner-wave-right { width: min(70vw, 400px); }
+  .td-corner-wave-left { width: min(55vw, 320px); }
+  .lc-top-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    border-radius: 16px;
+  }
+  .lc-progress-badge { display: none; }
+  .lobby-container { padding: 0 8px; }
+  .pin-code-giant { font-size: 54px; letter-spacing: 4px; }
+}
+

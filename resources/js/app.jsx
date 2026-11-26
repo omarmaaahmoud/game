@@ -10,9 +10,11 @@ import {
   Sparkles, Target, Plus, X, Check, Volume2, Rocket, ShieldCheck, LogIn,
   UserPlus, CircleHelp, Radio, Medal, Flame, Award, Heart, CheckSquare,
   Smartphone, Lock, Eye, CheckCheck, RotateCcw, Home, ChevronDown, Shield, Share2,
-  Monitor, Settings
+  Monitor, Settings, FileSpreadsheet, Upload, Download, AlertCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import * as XLSX from 'xlsx';
+import { buildTemplateWorkbook, parseExcelWorkbook } from './excelImport';
 
 /* ── Web Audio API Sound Synthesizer (Instant gamified sound effects) ── */
 const sfx = {
@@ -1326,21 +1328,6 @@ function TeacherDashboard({ setMode, setSession, setNotice, copyMobileLink, setI
           </div>
         </div>
       </div>
-
-      {/* Bottom Glass Mobile Link Bar */}
-      <div className="td-mobile-glass-bar">
-        <div className="td-mobile-info">
-          <Smartphone size={22} className="td-phone-icon" />
-          <div className="td-mobile-texts">
-            <strong>رابط الطلاب على الهواتف والأجهزة اللوحية (Mobile Link):</strong>
-            <p>أعطِ هذا الرابط للطلاب في الفصل ليفتحوه من هواتفهم على نفس شبكة الجوال.</p>
-          </div>
-        </div>
-        <button type="button" className="td-copy-outline-btn" onClick={copyMobileLink}>
-          <Copy size={16} />
-          <span>نسخ الرابط</span>
-        </button>
-      </div>
     </main>
   );
 }
@@ -1351,6 +1338,10 @@ function TeacherCreate({ setMode, setSession, setNotice, setIsTeacherUnlocked })
   const [teacherName, setTeacherName] = useState('');
   const [questions, setQuestions] = useState([emptyQuestion()]);
   const [loading, setLoading] = useState(false);
+  const [excelStatus, setExcelStatus] = useState(null);
+  const [importMode, setImportMode] = useState('replace');
+  const [isDraggingExcel, setIsDraggingExcel] = useState(false);
+  const excelInputRef = useRef(null);
 
   function emptyQuestion() {
     return {
@@ -1431,6 +1422,86 @@ function TeacherCreate({ setMode, setSession, setNotice, setIsTeacherUnlocked })
     if (questions.length > 1) setQuestions(qs => qs.filter((_, i) => i !== qi));
   }
 
+  function handleDownloadExcelTemplate() {
+    sfx.play('click');
+    const link = document.createElement('a');
+    link.href = '/templates/tecorbi-questions-template.xlsx';
+    link.download = 'tecorbi-questions-template.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setNotice('📥 تم تحميل نموذج شيت Excel للأسئلة');
+  }
+
+  function handleDownloadFallbackXlsx() {
+    sfx.play('click');
+    const wb = buildTemplateWorkbook(XLSX);
+    XLSX.writeFile(wb, 'tecorbi-questions-template.xlsx');
+  }
+
+  async function processExcelFile(file) {
+    if (!file) return;
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+      setExcelStatus({
+        type: 'error',
+        message: 'صيغة الملف غير مدعومة. يرجى اختيار ملف Excel (.xlsx / .xls) أو CSV.',
+        errors: [],
+        warnings: [],
+      });
+      return;
+    }
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const { questions: imported, errors, warnings } = parseExcelWorkbook(XLSX, buffer);
+
+      if (imported.length === 0) {
+        setExcelStatus({
+          type: 'error',
+          message: 'تعذر استيراد أي أسئلة من الملف.',
+          errors,
+          warnings,
+        });
+        setNotice('❌ لم يتم العثور على أسئلة صالحة في ملف Excel');
+        return;
+      }
+
+      const isCurrentBlank =
+        questions.length === 1 &&
+        !questions[0].question_text.trim() &&
+        !questions[0].question_text_ar.trim() &&
+        questions[0].choices.every(c => !c.choice_text.trim());
+
+      const shouldReplace = importMode === 'replace' || isCurrentBlank;
+      setQuestions(prev => (shouldReplace ? imported : [...prev, ...imported].slice(0, 50)));
+      sfx.play('join');
+
+      setExcelStatus({
+        type: errors.length > 0 ? 'partial' : 'success',
+        message: `تم استيراد ${imported.length} سؤال من "${file.name}" بنجاح.`,
+        errors,
+        warnings,
+      });
+      setNotice(`📊 تم استيراد ${imported.length} سؤال من شيت Excel بنجاح!`);
+    } catch {
+      setExcelStatus({
+        type: 'error',
+        message: 'حدث خطأ أثناء قراءة الملف. تأكد أن الملف غير تالف وبصيغة Excel صحيحة.',
+        errors: [],
+        warnings: [],
+      });
+    }
+  }
+
+  async function handleExcelInputChange(e) {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processExcelFile(file);
+    }
+    e.target.value = '';
+  }
+
   async function submit() {
     if (!title.trim() || !teacherName.trim()) { setNotice('يرجى ملء عنوان المسابقة واسم المعلم'); return; }
     const valid = questions.every(q => q.question_text.trim() && q.choices.filter(c => c.choice_text.trim()).length >= 2);
@@ -1486,7 +1557,7 @@ function TeacherCreate({ setMode, setSession, setNotice, setIsTeacherUnlocked })
           <h1 className="page-bold-title">إنشاء مسابقة جديدة</h1>
           <p className="page-muted-sub">أدخل تفاصيل المسابقة وأسئلتك وخيارات الإجابة</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="section-header-actions">
           <button className="btn-3d btn-sample-template" onClick={loadDemoTemplate} type="button">
             <Sparkles size={16} /> تعبئة نموذج أسئلة جاهز ⚡
           </button>
@@ -1506,6 +1577,95 @@ function TeacherCreate({ setMode, setSession, setNotice, setIsTeacherUnlocked })
             <label>عنوان المسابقة</label>
             <input value={title} onChange={e => setTitle(e.target.value)} placeholder="مثال: تحدي العلوم - الصف الخامس" />
           </div>
+        </div>
+
+        {/* Excel Import & Template Box */}
+        <div
+          className={`excel-import-card ${isDraggingExcel ? 'is-dragging' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setIsDraggingExcel(true); }}
+          onDragLeave={() => setIsDraggingExcel(false)}
+          onDrop={async (e) => {
+            e.preventDefault();
+            setIsDraggingExcel(false);
+            const file = e.dataTransfer?.files?.[0];
+            if (file) await processExcelFile(file);
+          }}
+        >
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleExcelInputChange}
+            className="sr-only"
+            style={{ display: 'none' }}
+          />
+          <div className="excel-import-main">
+            <div className="excel-icon-disc">
+              <FileSpreadsheet size={24} />
+            </div>
+            <div className="excel-import-copy">
+              <strong>استيراد الأسئلة من شيت Excel (.xlsx / .csv)</strong>
+              <p>حمّل نموذج Excel الجاهز، املأ الأسئلة والخيارات، ثم ارفعه هنا أو اسحب الملف لإضافة الأسئلة فوراً.</p>
+            </div>
+          </div>
+
+          <div className="excel-import-controls">
+            <div className="excel-mode-switch" role="group" aria-label="طريقة الاستيراد">
+              <button
+                type="button"
+                className={`excel-mode-pill ${importMode === 'replace' ? 'is-active' : ''}`}
+                onClick={() => setImportMode('replace')}
+              >
+                استبدال الأسئلة
+              </button>
+              <button
+                type="button"
+                className={`excel-mode-pill ${importMode === 'append' ? 'is-active' : ''}`}
+                onClick={() => setImportMode('append')}
+              >
+                إضافة على الحالية
+              </button>
+            </div>
+
+            <div className="excel-btn-row">
+              <button
+                type="button"
+                className="excel-btn excel-btn-template"
+                onClick={handleDownloadExcelTemplate}
+                onContextMenu={(e) => { e.preventDefault(); handleDownloadFallbackXlsx(); }}
+              >
+                <Download size={16} />
+                <span>تحميل نموذج Excel</span>
+              </button>
+              <button
+                type="button"
+                className="excel-btn excel-btn-upload"
+                onClick={() => { sfx.play('click'); excelInputRef.current?.click(); }}
+              >
+                <Upload size={16} />
+                <span>رفع شيت الأسئلة</span>
+              </button>
+            </div>
+          </div>
+
+          {excelStatus && (
+            <div className={`excel-feedback-box is-${excelStatus.type}`}>
+              <div className="excel-feedback-head">
+                <AlertCircle size={17} />
+                <span>{excelStatus.message}</span>
+              </div>
+              {excelStatus.warnings?.length > 0 && (
+                <ul className="excel-feedback-list">
+                  {excelStatus.warnings.slice(0, 4).map((w, idx) => <li key={`w-${idx}`}>{w}</li>)}
+                </ul>
+              )}
+              {excelStatus.errors?.length > 0 && (
+                <ul className="excel-feedback-list">
+                  {excelStatus.errors.slice(0, 5).map((err, idx) => <li key={`e-${idx}`}>{err}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="questions-designer-list">
