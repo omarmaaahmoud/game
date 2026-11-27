@@ -2154,6 +2154,8 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
   const lastQuestionIdRef = useRef(initialPoll?.current_question?.id ?? null);
   const syncedMidBoardQuestionIdRef = useRef(initialPoll?.show_mid_leaderboard ? (initialPoll?.current_question?.id ?? null) : null);
   const lastStatsQuestionIdRef = useRef(initialStats?.question_id ?? null);
+  const autoRevealTriggeredRef = useRef(false);
+  const autoTop5TimerRef = useRef(null);
 
   const refresh = useCallback(async (targetPin = activePinRef.current) => {
     if (!targetPin || !isMountedRef.current) return;
@@ -2172,6 +2174,8 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
         lastStatsQuestionIdRef.current = null;
         setShowTop5(false);
         setQuestionStats(null);
+        autoRevealTriggeredRef.current = false;
+        if (autoTop5TimerRef.current) { clearTimeout(autoTop5TimerRef.current); autoTop5TimerRef.current = null; }
       } else if (
         p.question_state === 'revealed' &&
         p.show_mid_leaderboard === true &&
@@ -2312,8 +2316,22 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       clearInterval(clockInterval);
       unsubscribe();
       if (timerRef.current) clearTimeout(timerRef.current);
+      if (autoTop5TimerRef.current) clearTimeout(autoTop5TimerRef.current);
     };
   }, [session?.pin, refresh, setMode]);
+
+  // Auto-reveal answer when timer expires or all students answered
+  useEffect(() => {
+    if (!poll || poll.question_state !== 'answering' || poll.status !== 'active') return;
+    if (autoRevealTriggeredRef.current || isProcessing) return;
+    const students = poll.player_count || leaderboard.length || 0;
+    const allAnswered = answeredCount > 0 && students > 0 && answeredCount >= students;
+    const timeExpired = liveRemaining !== null && liveRemaining <= 0;
+    if (allAnswered || timeExpired) {
+      autoRevealTriggeredRef.current = true;
+      revealAnswer();
+    }
+  });
 
   // Fetch question answer breakdown once question is revealed
   useEffect(() => {
@@ -2348,6 +2366,8 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       setQuestionStats(null);
       syncedMidBoardQuestionIdRef.current = null;
       lastStatsQuestionIdRef.current = null;
+      autoRevealTriggeredRef.current = false;
+      if (autoTop5TimerRef.current) { clearTimeout(autoTop5TimerRef.current); autoTop5TimerRef.current = null; }
       if (res && res.status === 'completed') {
         setMode('leaderboard');
         return;
@@ -3900,16 +3920,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
     };
   }, [session?.pin, applyAuthoritativeSnapshot]);
 
-  // Fallback timer ONLY for legacy backends that don't expose show_mid_leaderboard
-  useEffect(() => {
-    const pin = session?.pin;
-    if (!isRevealed || !pin || serverControlsMidBoardRef.current || showMidBoardRef.current) return;
-    midBoardTimer.current = setTimeout(async () => {
-      if (!isMountedRef.current || sessionRef.current?.pin !== pin || serverControlsMidBoardRef.current) return;
-      await openMidLeaderboard(pin);
-    }, 3000);
-    return () => { if (midBoardTimer.current) clearTimeout(midBoardTimer.current); };
-  }, [isRevealed, session?.pin, openMidLeaderboard]);
+
 
   async function submitAnswer(choiceId) {
     if (gameStatus !== 'active' || selected !== null || isRevealed || isTimeUp || isLeadPeriod || timerDisplay <= 0) return;
