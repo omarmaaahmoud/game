@@ -15,6 +15,7 @@ class GameSession extends Model
         'status',
         'current_question_index',
         'question_state',
+        'show_mid_leaderboard',
         'question_started_at',
         'state_version',
         'question_paused_remaining_ms',
@@ -29,6 +30,7 @@ class GameSession extends Model
         'state_version' => 'integer',
         'question_paused_remaining_ms' => 'integer',
         'current_question_index' => 'integer',
+        'show_mid_leaderboard' => 'boolean',
     ];
 
     public function questions(): HasMany

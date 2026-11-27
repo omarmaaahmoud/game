@@ -10,6 +10,7 @@ use App\Events\GameStarted;
 use App\Events\QuestionChanged;
 use App\Events\AnswerRevealed;
 use App\Events\LeaderboardUpdated;
+use App\Events\MidLeaderboardShown;
 use App\Events\GameFinished;
 use App\Events\SessionReset;
 use App\Events\SessionPaused;
@@ -263,6 +264,7 @@ class SessionController extends Controller
                         'status' => 'active',
                         'current_question_index' => 0,
                         'question_state' => 'answering',
+                        'show_mid_leaderboard' => false,
                         'question_started_at' => $startedAt,
                         'question_paused_remaining_ms' => null,
                         'state_version' => $currentVersion + 1,
@@ -363,6 +365,7 @@ class SessionController extends Controller
                         ->update([
                             'status' => 'completed',
                             'question_state' => 'revealed',
+                            'show_mid_leaderboard' => false,
                             'question_started_at' => null,
                             'question_paused_remaining_ms' => null,
                             'state_version' => $currentVersion + 1,
@@ -439,6 +442,7 @@ class SessionController extends Controller
                         'current_question_index' => $nextIndex,
                         'status' => 'active',
                         'question_state' => 'answering',
+                        'show_mid_leaderboard' => false,
                         'question_started_at' => $startedAt,
                         'question_paused_remaining_ms' => null,
                         'state_version' => $currentVersion + 1,
@@ -536,6 +540,7 @@ class SessionController extends Controller
                     ->where('state_version', $currentVersion)
                     ->update([
                         'question_state' => 'revealed',
+                        'show_mid_leaderboard' => false,
                         'state_version' => $currentVersion + 1,
                     ]);
 
@@ -585,6 +590,92 @@ class SessionController extends Controller
                     'question_state' => 'revealed',
                     'correct_choice_id' => $correctChoiceId,
                     'state_version' => $newVersion,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }, 5);
+        } catch (\Illuminate\Database\QueryException $e) {
+            if (str_contains($e->getMessage(), 'database is locked') || str_contains($e->getMessage(), 'busy')) {
+                return response()->json([
+                    'error' => 'Database is temporarily busy, please retry',
+                    'code' => 'DATABASE_BUSY',
+                ], 503, ['Retry-After' => 1]);
+            }
+            throw $e;
+        }
+    }
+
+    // Teacher advances from revealed question result to Top-5 mid-game leaderboard
+    public function showMidLeaderboard(string $pin): JsonResponse
+    {
+        try {
+            $session = GameSession::where('pin', $pin)->firstOrFail();
+
+            if ($session->status !== 'active' || $session->question_state !== 'revealed') {
+                return response()->json([
+                    'error' => 'Question result must be revealed before showing rankings',
+                    'code' => 'INVALID_STATE',
+                ], 422);
+            }
+
+            $top5 = $session->players()
+                ->orderByDesc('score')
+                ->orderBy('id', 'asc')
+                ->take(5)
+                ->get(['id', 'name', 'avatar', 'score', 'streak'])
+                ->values()
+                ->map(function ($p, $index) {
+                    return [
+                        'rank' => $index + 1,
+                        'id' => $p->id,
+                        'name' => $p->name,
+                        'avatar' => $p->avatar,
+                        'score' => $p->score,
+                        'streak' => $p->streak,
+                    ];
+                })
+                ->all();
+
+            if ($session->show_mid_leaderboard) {
+                return response()->json([
+                    'show_mid_leaderboard' => true,
+                    'state_version' => (int) $session->state_version,
+                    'leaderboard' => $top5,
+                    'server_now_ms' => (int) round(microtime(true) * 1000),
+                ]);
+            }
+
+            $currentVersion = (int) $session->state_version;
+            $currentQuestion = $session->currentQuestion();
+
+            return DB::transaction(function () use ($session, $currentVersion, $currentQuestion, $top5) {
+                $affected = GameSession::where('id', $session->id)
+                    ->where('status', 'active')
+                    ->where('question_state', 'revealed')
+                    ->where('state_version', $currentVersion)
+                    ->update([
+                        'show_mid_leaderboard' => true,
+                        'state_version' => $currentVersion + 1,
+                    ]);
+
+                if ($affected === 0) {
+                    $session->refresh();
+                    return response()->json([
+                        'show_mid_leaderboard' => (bool) $session->show_mid_leaderboard,
+                        'state_version' => (int) $session->state_version,
+                        'leaderboard' => $top5,
+                        'server_now_ms' => (int) round(microtime(true) * 1000),
+                    ]);
+                }
+
+                $newVersion = $currentVersion + 1;
+                DB::afterCommit(function () use ($session, $top5, $currentQuestion, $newVersion) {
+                    broadcast(new MidLeaderboardShown($session->pin, $top5, $currentQuestion?->id, $newVersion));
+                });
+
+                return response()->json([
+                    'show_mid_leaderboard' => true,
+                    'state_version' => $newVersion,
+                    'leaderboard' => $top5,
                     'server_now_ms' => (int) round(microtime(true) * 1000),
                 ]);
             }, 5);
@@ -793,6 +884,7 @@ class SessionController extends Controller
                     ->update([
                         'status' => 'completed',
                         'question_state' => 'revealed',
+                        'show_mid_leaderboard' => false,
                         'question_started_at' => null,
                         'question_paused_remaining_ms' => null,
                         'state_version' => $currentVersion + 1,
@@ -870,6 +962,7 @@ class SessionController extends Controller
                         'status' => 'waiting',
                         'current_question_index' => 0,
                         'question_state' => 'answering',
+                        'show_mid_leaderboard' => false,
                         'question_started_at' => null,
                         'question_paused_remaining_ms' => null,
                         'state_version' => $currentVersion + 1,
@@ -943,6 +1036,7 @@ class SessionController extends Controller
             'status' => $session->status,
             'current_question_index' => (int) $session->current_question_index,
             'question_state' => $session->question_state ?? 'answering',
+            'show_mid_leaderboard' => (bool) ($session->show_mid_leaderboard ?? false),
             'question_started_at' => $session->question_started_at ? (int) $session->question_started_at : null,
             'state_version' => (int) ($session->state_version ?? 0),
             'question_paused_remaining_ms' => $pausedRemaining,

@@ -24,6 +24,7 @@ Route::middleware('teacher.auth')->group(function () {
     Route::post('/sessions/{pin}/start', [SessionController::class, 'start']);
     Route::post('/sessions/{pin}/next', [SessionController::class, 'next']);
     Route::post('/sessions/{pin}/reveal', [SessionController::class, 'reveal']);
+    Route::post('/sessions/{pin}/mid-leaderboard', [SessionController::class, 'showMidLeaderboard']);
     Route::post('/sessions/{pin}/pause', [SessionController::class, 'pause']);
     Route::post('/sessions/{pin}/resume', [SessionController::class, 'resume']);
     Route::post('/sessions/{pin}/end', [SessionController::class, 'end']);

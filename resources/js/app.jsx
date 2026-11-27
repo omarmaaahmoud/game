@@ -296,6 +296,12 @@ const teacherPost = (pin, url, body = {}) => {
   return post(url, body, headers);
 };
 
+const teacherGet = (pin, url) => {
+  const token = getTeacherToken(pin);
+  const headers = token ? { 'X-Teacher-Token': token } : {};
+  return get(url, headers);
+};
+
 const teacherCreatePost = (url, body = {}) => {
   const portalToken = getTeacherPortalToken();
   const headers = portalToken ? { 'X-Teacher-Auth': portalToken } : {};
@@ -1975,12 +1981,14 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
 }
 
 /* ══════════════════════ TEACHER: LIVE CONTROL (WITH REVEAL BUTTON) ══════════════════════ */
-function TeacherLive({ session, setSession, setMode, setNotice }) {
-  const [poll, setPoll] = useState(null);
-  const [leaderboard, setLeaderboard] = useState([]);
+function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = null, initialShowTop5 = false, initialStats = null }) {
+  const [poll, setPoll] = useState(initialPoll);
+  const [leaderboard, setLeaderboard] = useState(() => initialPoll?.leaderboard || []);
   const [isProcessing, setIsProcessing] = useState(false);
   const [liveRemaining, setLiveRemaining] = useState(null);
   const [answeredCount, setAnsweredCount] = useState(0);
+  const [showTop5, setShowTop5] = useState(() => Boolean(initialShowTop5 || (initialPoll?.question_state === 'revealed' && initialPoll?.show_mid_leaderboard)));
+  const [questionStats, setQuestionStats] = useState(initialStats);
   const timerRef = useRef(null);
   const inFlightRef = useRef(false);
   const pendingRefreshRef = useRef(false);
@@ -1989,6 +1997,9 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
   activePinRef.current = session?.pin;
   const pollRef = useRef(poll);
   pollRef.current = poll;
+  const lastQuestionIdRef = useRef(initialPoll?.current_question?.id ?? null);
+  const syncedMidBoardQuestionIdRef = useRef(initialPoll?.show_mid_leaderboard ? (initialPoll?.current_question?.id ?? null) : null);
+  const lastStatsQuestionIdRef = useRef(initialStats?.question_id ?? null);
 
   const refresh = useCallback(async (targetPin = activePinRef.current) => {
     if (!targetPin || !isMountedRef.current) return;
@@ -2000,6 +2011,21 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     try {
       const p = await get(`/sessions/${targetPin}/poll`);
       if (!isMountedRef.current || activePinRef.current !== targetPin) return;
+      const incomingQId = p.current_question?.id ?? null;
+      if (incomingQId !== lastQuestionIdRef.current || p.question_state === 'answering') {
+        lastQuestionIdRef.current = incomingQId;
+        syncedMidBoardQuestionIdRef.current = null;
+        lastStatsQuestionIdRef.current = null;
+        setShowTop5(false);
+        setQuestionStats(null);
+      } else if (
+        p.question_state === 'revealed' &&
+        p.show_mid_leaderboard === true &&
+        syncedMidBoardQuestionIdRef.current !== incomingQId
+      ) {
+        syncedMidBoardQuestionIdRef.current = incomingQId;
+        setShowTop5(true);
+      }
       setPoll(p);
       if (p.leaderboard) {
         setLeaderboard(p.leaderboard);
@@ -2135,6 +2161,26 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
     };
   }, [session?.pin, refresh, setMode]);
 
+  // Fetch question answer breakdown once question is revealed
+  useEffect(() => {
+    const pin = session?.pin;
+    const qId = poll?.current_question?.id;
+    if (!pin || !qId || poll?.question_state !== 'revealed') return;
+    if (lastStatsQuestionIdRef.current === qId) return;
+    lastStatsQuestionIdRef.current = qId;
+    let active = true;
+    teacherGet(pin, `/sessions/${pin}/question-stats`)
+      .then(data => {
+        if (active && isMountedRef.current && data?.question_id === qId) {
+          setQuestionStats(data);
+        }
+      })
+      .catch(() => {
+        if (active) lastStatsQuestionIdRef.current = null;
+      });
+    return () => { active = false; };
+  }, [poll?.question_state, poll?.current_question?.id, session?.pin]);
+
   async function nextQ() {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -2144,6 +2190,10 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
         expected_index: poll?.current_question_index,
       });
       setAnsweredCount(0);
+      setShowTop5(false);
+      setQuestionStats(null);
+      syncedMidBoardQuestionIdRef.current = null;
+      lastStatsQuestionIdRef.current = null;
       if (res && res.status === 'completed') {
         setMode('leaderboard');
         return;
@@ -2160,12 +2210,30 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
   async function revealAnswer() {
     if (isProcessing) return;
     setIsProcessing(true);
+    setShowTop5(false);
+    syncedMidBoardQuestionIdRef.current = null;
     sfx.play('win');
     try {
       await teacherPost(session.pin, `/sessions/${session.pin}/reveal`);
       await refresh();
     } catch (e) {
       console.error(e);
+      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  async function goToTop5() {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    syncedMidBoardQuestionIdRef.current = poll?.current_question?.id ?? null;
+    setShowTop5(true);
+    sfx.play('join');
+    try {
+      await teacherPost(session.pin, `/sessions/${session.pin}/mid-leaderboard`);
+      await refresh();
+    } catch (e) {
       if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
     } finally {
       setIsProcessing(false);
@@ -2232,7 +2300,14 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
   );
 
   const isRevealed = poll.question_state === 'revealed';
+  const isTop5Stage = isRevealed && showTop5;
+  const isLastQuestion = (poll.current_question_index + 1) >= (poll.total_questions || 1);
   const totalStudents = poll.player_count || leaderboard.length || 0;
+  const top5Players = leaderboard.slice(0, 5);
+  const statsList = questionStats?.stats || [];
+  const totalQuestionAnswers = questionStats?.total_answers ?? 0;
+  const correctAnswersCount = statsList.filter(s => s.is_correct).reduce((acc, s) => acc + (s.count || 0), 0);
+  const wrongAnswersCount = Math.max(0, totalQuestionAnswers - correctAnswersCount);
 
   return (
     <main className="live-control-layout">
@@ -2276,21 +2351,88 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
       </div>
 
       {/* ── Main Two-Column Grid ── */}
-      <div className="lc-main-grid">
-        {/* Right (Main) Column: Current Question Preview & Action Dock */}
+      <div className={`lc-main-grid ${isTop5Stage ? 'is-top5-stage' : ''}`}>
+        {/* Right (Main) Column: Current Question / Result / Top-5 Stage & Action Dock */}
         <div className="lc-question-side">
-          {poll.current_question ? (
-            <div className="card question-live-preview-card">
+          {isTop5Stage ? (
+            <div className="card lc-top5-stage-card">
+              <div className="lc-top5-header">
+                <div className="lc-top5-title-group">
+                  <div className="lc-top5-badge">
+                    <Trophy size={16} />
+                    <span>ترتيب الطلاب بعد السؤال {poll.current_question_index + 1} من {poll.total_questions}</span>
+                  </div>
+                  <h2 className="lc-top5-heading">أفضل 5 متصدرين 🏆</h2>
+                </div>
+
+                <div className="lc-top5-meta">
+                  {leaderboard.length > 5 && (
+                    <span className="lrc-count-chip">أفضل 5 من أصل {leaderboard.length}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="lc-back-result-btn"
+                    onClick={() => { sfx.play('click'); setShowTop5(false); }}
+                  >
+                    <Eye size={15} />
+                    <span>نتيجة السؤال</span>
+                  </button>
+                </div>
+              </div>
+
+              {top5Players.length === 0 ? (
+                <div className="lrc-empty-state lc-top5-empty">
+                  <Trophy size={40} className="gold-color" />
+                  <p>لم يسجل أي متسابق نقاطاً حتى الآن</p>
+                </div>
+              ) : (
+                <div className="lc-top5-list">
+                  {top5Players.map((p, idx) => {
+                    const rankNum = p.rank || (idx + 1);
+                    const medalEmoji = rankNum === 1 ? '🥇' : rankNum === 2 ? '🥈' : rankNum === 3 ? '🥉' : null;
+                    return (
+                      <div key={p.id} className={`lc-top5-row rank-tier-${rankNum}`}>
+                        <div className={`lc-top5-rank-badge rank-badge-${rankNum}`}>
+                          {medalEmoji || `#${rankNum}`}
+                        </div>
+                        <div className="lc-top5-avatar">
+                          <AvatarDisplay avatarId={p.avatar} />
+                        </div>
+                        <div className="lc-top5-info">
+                          <strong className="lc-top5-name">{p.name}</strong>
+                          <div className="lc-top5-tags">
+                            {rankNum === 1 && <span className="lc-leader-tag">👑 المتصدر</span>}
+                            {p.streak > 1 && <span className="streak-mini-chip">🔥 سلسلة {p.streak}</span>}
+                          </div>
+                        </div>
+                        <div className="lc-top5-score" dir="ltr">
+                          <strong>{(p.score || 0).toLocaleString()}</strong>
+                          <small>XP</small>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : poll.current_question ? (
+            <div className={`card question-live-preview-card ${isRevealed ? 'is-result-stage' : ''}`}>
               <div className="qlp-topline">
                 <div className="qlp-badges-left">
                   <span className="q-badge-num">سؤال {poll.current_question_index + 1}</span>
                   <span className={`reveal-status-indicator ${isRevealed ? 'is-revealed' : 'is-answering'}`}>
-                    {isRevealed ? '✅ الإجابة معروضة' : (liveRemaining === 0 ? '⏰ انتهى الوقت (اضغط كشف الإجابة)' : '⏳ جاري استقبال الإجابات')}
+                    {isRevealed ? '📊 نتيجة السؤال (صح أم خطأ)' : (liveRemaining === 0 ? '⏰ انتهى الوقت (اضغط كشف الإجابة)' : '⏳ جاري استقبال الإجابات')}
                   </span>
                   {totalStudents > 0 && !isRevealed && (
                     <span className="qlp-answered-chip" title="الطلاب الذين أجابوا">
                       <Users size={14} /> {answeredCount} / {totalStudents} أجابوا
                     </span>
+                  )}
+                  {isRevealed && questionStats && (
+                    <div className="qlp-result-summary-pills">
+                      <span className="qlp-stat-pill is-correct">✅ {correctAnswersCount} صح</span>
+                      <span className="qlp-stat-pill is-wrong">❌ {wrongAnswersCount} خطأ</span>
+                    </div>
                   )}
                 </div>
 
@@ -2315,15 +2457,27 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
                 {poll.current_question.choices.map((c, i) => {
                   const isCorrect = poll.current_question.correct_choice_id === c.id;
                   const shape = SHAPES[i] || SHAPES[0];
+                  const statEntry = statsList.find(s => Number(s.choice_id) === Number(c.id));
+                  const choiceCount = statEntry?.count ?? 0;
+                  const choicePct = totalQuestionAnswers > 0 ? Math.round((choiceCount / totalQuestionAnswers) * 100) : 0;
+
                   return (
                     <div
                       key={c.id}
-                      className={`qlp-choice-pill tone-${shape.color} ${isCorrect ? 'teacher-choice-correct' : ''}`}
+                      className={`qlp-choice-pill tone-${shape.color} ${isCorrect ? 'teacher-choice-correct' : ''} ${isRevealed && !isCorrect ? 'teacher-choice-wrong-dim' : ''}`}
                     >
                       <div className="shape-marker">{shape.symbol}</div>
                       <div className="choice-texts-box" dir="auto">
                         <span className="choice-text-bold">{c.choice_text}</span>
                         {c.choice_text_ar && <small className="choice-text-sub">{c.choice_text_ar}</small>}
+                        {isRevealed && questionStats && (
+                          <div className="qlp-choice-stat-row">
+                            <div className="qlp-choice-stat-bar">
+                              <div className="qlp-choice-stat-fill" style={{ width: `${choicePct}%` }} />
+                            </div>
+                            <span className="qlp-choice-stat-num">{choiceCount} ({choicePct}%)</span>
+                          </div>
+                        )}
                       </div>
                       {isCorrect && (
                         <span className="correct-stamp">
@@ -2356,15 +2510,31 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
                   <Eye size={22} />
                   <span>{isProcessing ? 'جاري الكشف...' : 'كشف الإجابة الصحيحة للطلاب 👁️'}</span>
                 </button>
+              ) : !showTop5 ? (
+                <button
+                  className="btn-3d btn-primary-giant btn-top5-next-giant"
+                  onClick={goToTop5}
+                  disabled={isProcessing}
+                  title="عرض ترتيب أفضل 5 طلاب"
+                >
+                  <Trophy size={22} />
+                  <span>{isProcessing ? 'جاري التحميل...' : 'التالي — عرض الترتيب (Top 5) ⏭️'}</span>
+                </button>
               ) : (
                 <button
                   className="btn-3d btn-primary-giant btn-next-giant"
                   onClick={nextQ}
                   disabled={isProcessing}
-                  title="الانتقال للسؤال التالي"
+                  title={isLastQuestion ? 'إنهاء المسابقة وعرض منصة التتويج النهائية' : 'الانتقال للسؤال التالي'}
                 >
                   <SkipForward size={22} />
-                  <span>{isProcessing ? 'جاري الانتقال...' : 'الانتقال للسؤال التالي ⏭️'}</span>
+                  <span>
+                    {isProcessing
+                      ? 'جاري الانتقال...'
+                      : isLastQuestion
+                        ? 'عرض النتيجة النهائية والفائزين 🏆'
+                        : 'السؤال التالي ⏭️'}
+                  </span>
                 </button>
               )}
             </div>
@@ -2391,48 +2561,50 @@ function TeacherLive({ session, setSession, setMode, setNotice }) {
           </div>
         </div>
 
-        {/* Left Column: Live Leaderboard Side Panel */}
-        <div className="lc-leaderboard-side">
-          <div className="card live-rankings-card">
-            <div className="lrc-header">
-              <div className="lrc-title-wrap">
-                <Trophy size={20} className="gold-trophy-icon" />
-                <h3>المتصدرون (Live Ranking)</h3>
-              </div>
-              <span className="lrc-count-chip">{leaderboard.length} متسابق</span>
-            </div>
-
-            <div className="lrc-list">
-              {leaderboard.length === 0 ? (
-                <div className="lrc-empty-state">
-                  <div className="lrc-radar-dot" />
-                  <p>في انتظار إجابات الطلاب...</p>
+        {/* Left Column: Live Leaderboard Side Panel (hidden during focused Top-5 stage) */}
+        {!isTop5Stage && (
+          <div className="lc-leaderboard-side">
+            <div className="card live-rankings-card">
+              <div className="lrc-header">
+                <div className="lrc-title-wrap">
+                  <Trophy size={20} className="gold-trophy-icon" />
+                  <h3>المتصدرون (Live Ranking)</h3>
                 </div>
-              ) : (
-                leaderboard.map(p => {
-                  const medalEmoji = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : null;
-                  return (
-                    <div key={p.id} className={`lrc-row rank-item-${p.rank}`}>
-                      <span className={`rank-disc rank-${p.rank}`}>
-                        {medalEmoji || p.rank}
-                      </span>
-                      <span className="player-avatar-small">
-                        <AvatarDisplay avatarId={p.avatar} />
-                      </span>
-                      <span className="player-display-name">
-                        {p.name}
-                        {p.streak > 1 && <span className="streak-mini-chip">🔥{p.streak}</span>}
-                      </span>
-                      <strong className="player-live-score" dir="ltr">
-                        {p.score.toLocaleString()} XP
-                      </strong>
-                    </div>
-                  );
-                })
-              )}
+                <span className="lrc-count-chip">{leaderboard.length} متسابق</span>
+              </div>
+
+              <div className="lrc-list">
+                {leaderboard.length === 0 ? (
+                  <div className="lrc-empty-state">
+                    <div className="lrc-radar-dot" />
+                    <p>في انتظار إجابات الطلاب...</p>
+                  </div>
+                ) : (
+                  leaderboard.map(p => {
+                    const medalEmoji = p.rank === 1 ? '🥇' : p.rank === 2 ? '🥈' : p.rank === 3 ? '🥉' : null;
+                    return (
+                      <div key={p.id} className={`lrc-row rank-item-${p.rank}`}>
+                        <span className={`rank-disc rank-${p.rank}`}>
+                          {medalEmoji || p.rank}
+                        </span>
+                        <span className="player-avatar-small">
+                          <AvatarDisplay avatarId={p.avatar} />
+                        </span>
+                        <span className="player-display-name">
+                          {p.name}
+                          {p.streak > 1 && <span className="streak-mini-chip">🔥{p.streak}</span>}
+                        </span>
+                        <strong className="player-live-score" dir="ltr">
+                          {p.score.toLocaleString()} XP
+                        </strong>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </main>
   );
@@ -2766,9 +2938,12 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
   const [correctChoiceId, setCorrectChoiceId] = useState(() => initialRestore?.correctChoiceId ?? null);
 
   // Mid-game leaderboard state
-  const [showMidBoard, setShowMidBoard] = useState(false);
+  const [showMidBoard, setShowMidBoard] = useState(() => Boolean(initialRestore?.isRevealed && initialRestore?.showMidLeaderboard));
   const [midLeaderboard, setMidLeaderboard] = useState([]);
   const [myRank, setMyRank] = useState(null);
+  const showMidBoardRef = useRef(showMidBoard);
+  showMidBoardRef.current = showMidBoard;
+  const serverControlsMidBoardRef = useRef(Boolean(initialRestore?.showMidLeaderboard));
 
   const lastQId = useRef(initialRestore?.question?.id ?? null);
   const qIndexRef = useRef(initialRestore?.question ? initialRestore.qIndex : null);
@@ -2907,6 +3082,41 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
     }
   }, [fetchMyResult, applyResultSoundAndScore]);
 
+  const openMidLeaderboard = useCallback(async (targetPin, boardOverride = null) => {
+    if (!isMountedRef.current || !targetPin || sessionRef.current?.pin !== targetPin) return;
+    if (Array.isArray(boardOverride) && boardOverride.length > 0) {
+      setMidLeaderboard(boardOverride);
+      const myId = playerRef.current?.id;
+      const idx = boardOverride.findIndex(p => p.id === myId);
+      setMyRank(idx >= 0 ? idx + 1 : null);
+    }
+    try {
+      const activeToken = playerRef.current?.token || getPlayerAuth(targetPin)?.token;
+      const lb = await playerGet(targetPin, `/sessions/${targetPin}/leaderboard`, activeToken);
+      if (!isMountedRef.current || sessionRef.current?.pin !== targetPin) return;
+      const board = lb.leaderboard || [];
+      setMidLeaderboard(board);
+      if (lb.my_rank !== undefined && lb.my_rank !== null) {
+        setMyRank(lb.my_rank);
+      } else {
+        const myId = playerRef.current?.id;
+        const idx = board.findIndex(p => p.id === myId);
+        setMyRank(idx >= 0 ? idx + 1 : null);
+      }
+      if (lb.my_score !== undefined && lb.my_score !== null) {
+        setPlayer(p => (p ? { ...p, score: lb.my_score } : p));
+      }
+      showMidBoardRef.current = true;
+      setShowMidBoard(true);
+      sfx.play('join');
+    } catch {
+      if (Array.isArray(boardOverride) && boardOverride.length > 0 && isMountedRef.current) {
+        showMidBoardRef.current = true;
+        setShowMidBoard(true);
+      }
+    }
+  }, [setPlayer]);
+
   const handleNewQuestion = useCallback((qData, qIdx, totalCount, startedAt = null, version = 0, source = 'QuestionChanged') => {
     if (!qData || !isMountedRef.current) return;
     const numVersion = Number(version || 0);
@@ -2954,6 +3164,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
     setIsTimeUp(false);
     setIsRevealed(false);
     setCorrectChoiceId(null);
+    showMidBoardRef.current = false;
     setShowMidBoard(false);
     playedSound.current = false;
     if (midBoardTimer.current) clearTimeout(midBoardTimer.current);
@@ -2998,6 +3209,10 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       return;
     }
 
+    if (typeof data.show_mid_leaderboard === 'boolean') {
+      serverControlsMidBoardRef.current = true;
+    }
+
     if (data.status === 'completed') {
       if (versionNum > 0) {
         lastProcessedVersionRef.current = versionNum;
@@ -3034,6 +3249,9 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       if (data.question_state === 'revealed' && !isRevealedRef.current) {
         triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
       }
+      if (data.question_state === 'revealed' && data.show_mid_leaderboard === true && !showMidBoardRef.current) {
+        openMidLeaderboard(data.pin || sessionRef.current?.pin, data.leaderboard);
+      }
       return;
     }
 
@@ -3065,8 +3283,24 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       ) {
         triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
       }
+      if (
+        data.question_state === 'revealed' &&
+        data.show_mid_leaderboard === true &&
+        !showMidBoardRef.current &&
+        Number(data.current_question.id) === Number(lastQId.current)
+      ) {
+        openMidLeaderboard(data.pin || sessionRef.current?.pin, data.leaderboard);
+      } else if (
+        data.question_state === 'revealed' &&
+        data.show_mid_leaderboard === false &&
+        showMidBoardRef.current &&
+        Number(data.current_question.id) === Number(lastQId.current)
+      ) {
+        showMidBoardRef.current = false;
+        setShowMidBoard(false);
+      }
     }
-  }, [handleNewQuestion, setMode, triggerReveal]);
+  }, [handleNewQuestion, setMode, triggerReveal, openMidLeaderboard]);
 
   const recoverAuthoritativeState = useCallback(async (expectedPin = sessionRef.current?.pin, triggerVersion = 0) => {
     if (!expectedPin || !isMountedRef.current || recoveryInFlightRef.current) return;
@@ -3126,10 +3360,14 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       if (r.correctChoiceId) {
         setCorrectChoiceId(r.correctChoiceId);
       }
+      if (r.showMidLeaderboard) {
+        serverControlsMidBoardRef.current = true;
+        openMidLeaderboard(session.pin, r.session?.leaderboard);
+      }
     }
 
     onConsumeRestore?.();
-  }, [restoredMe, session?.pin, onConsumeRestore]);
+  }, [restoredMe, session?.pin, onConsumeRestore, openMidLeaderboard]);
 
   // Precise Authoritative Timer Tick (~150ms redraw, never accumulates)
   useEffect(() => {
@@ -3263,6 +3501,37 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
           }
         }
       },
+      MidLeaderboardShown: (data) => {
+        if (!isMountedRef.current || sessionRef.current?.pin !== pin || !data) return;
+        serverControlsMidBoardRef.current = true;
+        const incomingVersion = Number(data.state_version || 0);
+        const evalRes = evaluateIncomingEvent({
+          source: 'MidLeaderboardShown',
+          incomingVersion,
+          incomingQuestionId: data.question_id ?? null,
+          incomingQuestionState: 'revealed',
+          current: {
+            lastProcessedVersion: lastProcessedVersionRef.current,
+            questionId: lastQId.current,
+            questionIndex: qIndexRef.current,
+            status: gameStatusRef.current,
+            isRevealed: isRevealedRef.current,
+          },
+        });
+        if (evalRes.action === 'recover_authoritative') {
+          recoverAuthoritativeState(pin, incomingVersion);
+          return;
+        }
+        if (evalRes.action !== 'apply') return;
+        if (incomingVersion > 0) {
+          lastProcessedVersionRef.current = incomingVersion;
+          currentVersionRef.current = incomingVersion;
+        }
+        if (!isRevealedRef.current) {
+          triggerReveal(null, data.question_id ?? null);
+        }
+        openMidLeaderboard(pin, data.leaderboard);
+      },
       SessionPaused: (data) => {
         if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
         const incomingVersion = Number(data?.state_version || 0);
@@ -3388,7 +3657,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
     return () => {
       unsubscribe();
     };
-  }, [session?.pin, setMode, setPlayer, handleNewQuestion, triggerReveal, recoverAuthoritativeState]);
+  }, [session?.pin, setMode, setPlayer, handleNewQuestion, triggerReveal, recoverAuthoritativeState, openMidLeaderboard]);
 
   // Adaptive polling: 1500ms while answering, 1000ms otherwise, strictly 1 in-flight + 1 timer per active session
   useEffect(() => {
@@ -3404,6 +3673,10 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         const data = await get(`/sessions/${pin}/state`);
         if (!isMounted || sessionRef.current?.pin !== pin || !data) return;
         if (data.pin && String(data.pin) !== String(pin)) return;
+
+        if (typeof data.show_mid_leaderboard === 'boolean') {
+          serverControlsMidBoardRef.current = true;
+        }
 
         if (data.status === 'completed') {
           const v = Number(data.state_version || 0);
@@ -3473,34 +3746,16 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
     };
   }, [session?.pin, applyAuthoritativeSnapshot]);
 
-  // After reveal => fetch mid-game leaderboard after 3 seconds
+  // Fallback timer ONLY for legacy backends that don't expose show_mid_leaderboard
   useEffect(() => {
     const pin = session?.pin;
-    if (!isRevealed || !pin) return;
+    if (!isRevealed || !pin || serverControlsMidBoardRef.current || showMidBoardRef.current) return;
     midBoardTimer.current = setTimeout(async () => {
-      if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
-      try {
-        const activeToken = playerRef.current?.token || getPlayerAuth(pin)?.token;
-        const lb = await playerGet(pin, `/sessions/${pin}/leaderboard`, activeToken);
-        if (!isMountedRef.current || sessionRef.current?.pin !== pin) return;
-        const board = lb.leaderboard || [];
-        setMidLeaderboard(board);
-        if (lb.my_rank !== undefined && lb.my_rank !== null) {
-          setMyRank(lb.my_rank);
-        } else {
-          const myId = playerRef.current?.id;
-          const idx = board.findIndex(p => p.id === myId);
-          setMyRank(idx >= 0 ? idx + 1 : null);
-        }
-        if (lb.my_score !== undefined && lb.my_score !== null) {
-          setPlayer(p => (p ? { ...p, score: lb.my_score } : p));
-        }
-        setShowMidBoard(true);
-        sfx.play('join');
-      } catch {}
+      if (!isMountedRef.current || sessionRef.current?.pin !== pin || serverControlsMidBoardRef.current) return;
+      await openMidLeaderboard(pin);
     }, 3000);
     return () => { if (midBoardTimer.current) clearTimeout(midBoardTimer.current); };
-  }, [isRevealed, session?.pin, setPlayer]);
+  }, [isRevealed, session?.pin, openMidLeaderboard]);
 
   async function submitAnswer(choiceId) {
     if (gameStatus !== 'active' || selected !== null || isRevealed || isTimeUp || isLeadPeriod || timerDisplay <= 0) return;
@@ -3680,10 +3935,10 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
           </div>
         )}
 
-        {/* Full list (rest of players) */}
+        {/* 4th & 5th places (Top 5) */}
         {midLeaderboard.length > 3 && (
           <div className="mid-board-list-card">
-            {midLeaderboard.slice(3).map((p, idx) => {
+            {midLeaderboard.slice(3, 5).map((p, idx) => {
               const rank = idx + 4;
               const isMe = player && p.id === player.id;
               return (
@@ -3698,8 +3953,8 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
           </div>
         )}
 
-        {/* My position highlight (if not in top 3) */}
-        {myRank && myRank > 3 && (
+        {/* My position highlight (if not in top 5) */}
+        {myRank && myRank > 5 && (
           <div className="mid-board-my-position">
             <div className="mbmp-inner">
               <span className="mbmp-emoji"><AvatarDisplay avatarId={player.avatar} /></span>
@@ -4462,7 +4717,7 @@ function Leaderboard({ session, setMode, player, initialResults = null, initialF
   );
 }
 
-export { App, Leaderboard, StudentPlay, TeacherAuthModal, TeacherDashboard };
+export { App, Leaderboard, StudentPlay, TeacherAuthModal, TeacherDashboard, TeacherLive };
 
 /* ── Mount ── */
 const rootEl = typeof document !== 'undefined' ? document.getElementById('root') : null;

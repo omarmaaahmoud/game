@@ -224,7 +224,7 @@ try {
 }
 const rtMod = await import('../resources/js/realtimeState.js');
 
-const { Leaderboard, StudentPlay } = appMod;
+const { Leaderboard, StudentPlay, TeacherLive } = appMod;
 const { buildStudentRestorationState } = rtMod;
 
 const makePlayer = (id, name, score, extra = {}) => ({
@@ -793,4 +793,113 @@ test('StudentPlay: Restored revealed session shows accurate correct vs wrong fee
   assert.match(htmlWrong, /feedback-wrong/);
   assert.match(htmlWrong, /wrong-btn/);
   assert.match(htmlWrong, /إجابة غير صحيحة/);
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// TEACHERLIVE 3-STEP FLOW (REVEAL RESULT -> NEXT TOP 5 -> NEXT QUESTION)
+// ══════════════════════════════════════════════════════════════════════
+
+test('TeacherLive: Revealed result stage shows stats & "Next -> Top 5" button before Next Question', () => {
+  const sevenPlayers = Array.from({ length: 7 }, (_, i) => ({
+    rank: i + 1,
+    id: i + 1,
+    name: `Kid${i + 1}`,
+    avatar: 'ninja',
+    score: (7 - i) * 200,
+    streak: i === 0 ? 3 : 0,
+  }));
+
+  const basePoll = {
+    pin: '770011',
+    status: 'active',
+    current_question_index: 0,
+    total_questions: 3,
+    question_state: 'revealed',
+    show_mid_leaderboard: false,
+    player_count: 7,
+    leaderboard: sevenPlayers,
+    current_question: { ...sampleQuestion, correct_choice_id: 7002 },
+  };
+
+  const sampleStats = {
+    question_id: 700,
+    total_answers: 7,
+    stats: [
+      { choice_id: 7001, is_correct: false, count: 2 },
+      { choice_id: 7002, is_correct: true, count: 5 },
+    ],
+  };
+
+  // Step 2: Question Result ("صح ولا غلط")
+  const htmlResult = renderToStaticMarkup(
+    React.createElement(TeacherLive, {
+      session: { pin: '770011', title: 'Top5 Quiz' },
+      setSession: () => {},
+      setMode: () => {},
+      setNotice: () => {},
+      initialPoll: basePoll,
+      initialShowTop5: false,
+      initialStats: sampleStats,
+    })
+  );
+
+  assert.match(htmlResult, /نتيجة السؤال \(صح أم خطأ\)/);
+  assert.match(htmlResult, /5 صح/);
+  assert.match(htmlResult, /2 خطأ/);
+  assert.match(htmlResult, /التالي — عرض الترتيب \(Top 5\)/);
+  assert.doesNotMatch(htmlResult, /أفضل 5 متصدرين/);
+
+  // Step 3: Top-5 Leaderboard stage (capped at 5th place)
+  const htmlTop5 = renderToStaticMarkup(
+    React.createElement(TeacherLive, {
+      session: { pin: '770011', title: 'Top5 Quiz' },
+      setSession: () => {},
+      setMode: () => {},
+      setNotice: () => {},
+      initialPoll: { ...basePoll, show_mid_leaderboard: true },
+      initialShowTop5: true,
+      initialStats: sampleStats,
+    })
+  );
+
+  assert.match(htmlTop5, /أفضل 5 متصدرين/);
+  assert.match(htmlTop5, /Kid1/);
+  assert.match(htmlTop5, /Kid5/);
+  assert.doesNotMatch(htmlTop5, /Kid6/);
+  assert.doesNotMatch(htmlTop5, /Kid7/);
+  assert.match(htmlTop5, /السؤال التالي/);
+});
+
+test('StudentPlay: Restored show_mid_leaderboard caps mid-board to Top 5', () => {
+  const restored = buildStudentRestorationState({
+    player: { id: 10, name: 'Sara', score: 950, streak: 1 },
+    session: {
+      pin: '880099',
+      status: 'active',
+      current_question_index: 0,
+      total_questions: 2,
+      question_state: 'revealed',
+      show_mid_leaderboard: true,
+      state_version: 3,
+      current_question: { ...sampleQuestion, correct_choice_id: 7002 },
+    },
+    answered: true,
+    answer: { question_id: 700, choice_id: 7002, is_correct: true, points_earned: 950 },
+  });
+
+  assert.equal(restored.showMidLeaderboard, true);
+  assert.equal(restored.isRevealed, true);
+
+  const html = renderToStaticMarkup(
+    React.createElement(StudentPlay, {
+      session: { pin: '880099' },
+      player: { id: 10, name: 'Sara', score: 950, streak: 1 },
+      setMode: () => {},
+      setNotice: () => {},
+      setPlayer: () => {},
+      restoredMe: restored,
+    })
+  );
+
+  assert.match(html, /من يتصدّر المنافسة؟/);
 });

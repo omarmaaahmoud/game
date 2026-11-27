@@ -186,6 +186,7 @@ export function buildStudentRestorationState(meData) {
     totalQuestions: Number(sess.total_questions ?? 0),
     gameStatus: status,
     isRevealed,
+    showMidLeaderboard: Boolean(isRevealed && sess.show_mid_leaderboard),
     correctChoiceId: isRevealed ? (q?.correct_choice_id ?? null) : null,
     selected: restoredSelected,
     pendingResult: restoredPendingResult,
