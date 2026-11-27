@@ -700,7 +700,15 @@ function App() {
   const [restoredMe, setRestoredMe] = useState(null);
   const [notice, setNotice] = useState('');
   const [isTeacherUnlocked, setIsTeacherUnlocked] = useState(false);
-  const [showIntro, setShowIntro] = useState(true);
+  const [showIntro, setShowIntro] = useState(() => {
+    try {
+      return !localStorage.getItem('tecorbi_last_session_pin');
+    } catch {
+      return true;
+    }
+  });
+  const [pendingRestore, setPendingRestore] = useState(null);
+  const [confirmExitGame, setConfirmExitGame] = useState(false);
 
   // Verify any stored teacher portal token with the server on boot (never trust sessionStorage alone)
   useEffect(() => {
@@ -722,9 +730,12 @@ function App() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  // R2.7: Reconnect on boot / refresh if player session is saved in storage
+  // R2.7: Check on boot / refresh if player session is saved in storage and ask user to resume or exit
   useEffect(() => {
-    const savedPin = localStorage.getItem('tecorbi_last_session_pin');
+    let savedPin = null;
+    try {
+      savedPin = localStorage.getItem('tecorbi_last_session_pin');
+    } catch {}
     if (!savedPin) return;
     const auth = getPlayerAuth(savedPin);
     if (!auth || !auth.token) {
@@ -735,11 +746,12 @@ function App() {
     playerGet(savedPin, `/sessions/${savedPin}/me`, auth.token)
       .then(data => {
         const restored = buildStudentRestorationState(data);
-        if (!restored) return;
-        setSession(restored.session);
-        setPlayer({ ...restored.player, token: auth.token });
-        setRestoredMe(restored);
-        setMode(restored.targetMode);
+        if (!restored || restored.targetMode === 'home') {
+          clearPlayerAuth(savedPin);
+          return;
+        }
+        setShowIntro(false);
+        setPendingRestore({ restored, auth, savedPin });
       })
       .catch((err) => {
         if (err?.status === 401 || err?.status === 403 || err?.status === 404) {
@@ -747,10 +759,51 @@ function App() {
           setPlayer(null);
           setSession(null);
           setRestoredMe(null);
+          setPendingRestore(null);
           setMode('home');
         }
       });
   }, []);
+
+  const handleContinueRestoredGame = () => {
+    if (!pendingRestore) return;
+    const { restored, auth } = pendingRestore;
+    sfx.play('join');
+    setSession(restored.session);
+    setPlayer({ ...restored.player, token: auth.token });
+    setRestoredMe(restored);
+    setMode(restored.targetMode);
+    setPendingRestore(null);
+  };
+
+  const handleExitCurrentGame = () => {
+    sfx.play('click');
+    let fallbackPin = null;
+    try {
+      fallbackPin = localStorage.getItem('tecorbi_last_session_pin');
+    } catch {}
+    const pinToClear = pendingRestore?.savedPin || session?.pin || fallbackPin;
+    if (pinToClear) clearPlayerAuth(pinToClear);
+    setPlayer(null);
+    setSession(null);
+    setRestoredMe(null);
+    setPendingRestore(null);
+    setConfirmExitGame(false);
+    setMode('home');
+  };
+
+  const handleBrandClick = () => {
+    sfx.play('click');
+    if (mode === 'student-lobby' || mode === 'student-play') {
+      setConfirmExitGame(true);
+      return;
+    }
+    if (mode === 'leaderboard') {
+      handleExitCurrentGame();
+      return;
+    }
+    setMode('home');
+  };
 
   // Restore teacher token from storage if session exists
   useEffect(() => {
@@ -814,7 +867,7 @@ function App() {
 
       {/* ── Official Tecorbi Kids Arena Header ── */}
       <header className="game-navbar">
-        <button className="navbar-brand" onClick={() => { sfx.play('click'); setMode('home'); }}>
+        <button className="navbar-brand" onClick={handleBrandClick}>
           <div className="brand-logo-disc">
             <img src="/images/tecorbi-icon.png" alt="Tecorbi Icon" style={{ width: '28px', height: '28px', objectFit: 'contain' }} />
           </div>
@@ -857,6 +910,17 @@ function App() {
             </div>
           )}
 
+          {(mode === 'student-lobby' || mode === 'student-play') && (
+            <button
+              className="btn-exit-game-nav"
+              onClick={() => { sfx.play('click'); setConfirmExitGame(true); }}
+              title="الخروج من المسابقة"
+            >
+              <ArrowLeft size={15} />
+              <span>خروج</span>
+            </button>
+          )}
+
           {/* Dedicated Teacher Portal Button (Only visible on Home or Teacher screens, hidden during student gameplay) */}
           {(mode === 'home' || mode.startsWith('teacher')) && (
             <button className="btn-teacher-portal-nav" onClick={openTeacherPortal} title="دخول استوديو المعلم">
@@ -882,7 +946,7 @@ function App() {
             onConsumeRestore={() => setRestoredMe(null)}
           />
         )}
-        {mode === 'leaderboard' && <Leaderboard key={session?.pin || 'none'} session={session} setMode={setMode} player={player} />}
+        {mode === 'leaderboard' && <Leaderboard key={session?.pin || 'none'} session={session} setMode={setMode} player={player} onReturnHome={handleExitCurrentGame} />}
 
         {/* Teacher Dedicated Screens */}
         {mode === 'teacher-auth' && <TeacherAuthModal setMode={setMode} setIsTeacherUnlocked={setIsTeacherUnlocked} setNotice={setNotice} />}
@@ -898,6 +962,96 @@ function App() {
             <span>✨ Tecorbi Kids Arena · صُمم لتعليم ممتع وتفاعلي للأبطال</span>
           </div>
         </footer>
+      )}
+
+      {pendingRestore && (
+        <div className="restore-prompt-overlay" role="dialog" aria-modal="true" aria-labelledby="restore-dialog-title">
+          <div className="restore-prompt-card">
+            <div className="restore-prompt-badge">
+              <Gamepad2 size={16} />
+              <span>{pendingRestore.restored.gameStatus === 'completed' ? 'جولة منتهية' : 'تم العثور على جولة قائمة'}</span>
+            </div>
+
+            <h2 id="restore-dialog-title" className="restore-prompt-title">
+              {pendingRestore.restored.gameStatus === 'completed'
+                ? 'انتهت هذه المسابقة!'
+                : 'هل تريد استكمال الجيم أم الخروج؟'}
+            </h2>
+            <p className="restore-prompt-desc">
+              {pendingRestore.restored.gameStatus === 'completed'
+                ? 'لديك نتائج مسجلة في هذه الجولة. يمكنك عرض منصة التتويج أو الخروج للصفحة الرئيسية.'
+                : 'كنت مشاركاً في هذه المسابقة قبل تحديث الصفحة. اختر متابعة اللعب من نفس المكان أو الخروج لبداية جديدة.'}
+            </p>
+
+            <div className="restore-session-summary">
+              <div className="restore-player-row">
+                <div className="restore-avatar-circle">
+                  <AvatarDisplay avatarId={pendingRestore.restored.player?.avatar} />
+                </div>
+                <div className="restore-player-meta">
+                  <strong>{pendingRestore.restored.player?.name || 'لاعب'}</strong>
+                  <span>{pendingRestore.restored.session?.title || 'مسابقة تفاعلية'}</span>
+                </div>
+                <span className="restore-score-pill" dir="ltr">
+                  <Zap size={13} fill="currentColor" /> {pendingRestore.restored.player?.score ?? 0} XP
+                </span>
+              </div>
+
+              <div className="restore-session-meta-row">
+                <span>
+                  {pendingRestore.restored.gameStatus === 'completed'
+                    ? '🏆 النتائج النهائية متاحة'
+                    : pendingRestore.restored.gameStatus === 'paused'
+                      ? '⏸️ متوقفة مؤقتاً'
+                      : pendingRestore.restored.gameStatus === 'active'
+                        ? `🟢 جارية الآن · سؤال ${(pendingRestore.restored.qIndex ?? 0) + 1}${pendingRestore.restored.totalQuestions ? ` / ${pendingRestore.restored.totalQuestions}` : ''}`
+                        : '⏳ في غرفة الانتظار'}
+                </span>
+                <span className="restore-pin-tag" dir="ltr">PIN: {pendingRestore.savedPin}</span>
+              </div>
+            </div>
+
+            <div className="restore-prompt-actions">
+              <button className="btn-restore-continue" onClick={handleContinueRestoredGame}>
+                <Rocket size={19} />
+                <span>{pendingRestore.restored.gameStatus === 'completed' ? 'عرض النتائج النهائية' : 'استكمال الجيم (متابعة اللعب)'}</span>
+              </button>
+              <button className="btn-restore-exit" onClick={handleExitCurrentGame}>
+                <ArrowLeft size={18} />
+                <span>اطلع برا (الخروج للصفحة الرئيسية)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmExitGame && !pendingRestore && (
+        <div className="restore-prompt-overlay" role="dialog" aria-modal="true" aria-labelledby="exit-dialog-title">
+          <div className="restore-prompt-card">
+            <div className="restore-prompt-badge">
+              <Gamepad2 size={16} />
+              <span>تأكيد الخروج</span>
+            </div>
+
+            <h2 id="exit-dialog-title" className="restore-prompt-title">
+              هل تريد الخروج من الجيم؟
+            </h2>
+            <p className="restore-prompt-desc">
+              إذا خرجت الآن فستعود إلى الصفحة الرئيسية، أو يمكنك البقاء واستكمال المسابقة الحالية.
+            </p>
+
+            <div className="restore-prompt-actions">
+              <button className="btn-restore-continue" onClick={() => { sfx.play('click'); setConfirmExitGame(false); }}>
+                <Play size={18} fill="currentColor" />
+                <span>استكمال الجيم</span>
+              </button>
+              <button className="btn-restore-exit" onClick={handleExitCurrentGame}>
+                <ArrowLeft size={18} />
+                <span>نعم، اطلع برا للصفحة الرئيسية</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {notice && (
@@ -4136,7 +4290,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
 }
 
 /* ══════════════════════ ESPORTS HALL OF FAME LEADERBOARD ══════════════════════ */
-function Leaderboard({ session, setMode, player, initialResults = null, initialFetchError = false }) {
+function Leaderboard({ session, setMode, player, initialResults = null, initialFetchError = false, onReturnHome = null }) {
   const pin = session?.pin ? String(session.pin) : null;
   const matchesInitialPin = Boolean(
     initialResults &&
@@ -4701,7 +4855,18 @@ function Leaderboard({ session, setMode, player, initialResults = null, initialF
 
       {/* ── Footer Action Buttons ── */}
       <footer className="hof-actions-footer">
-        <button className="btn-hof btn-hof-home" onClick={() => { sfx.play('click'); setMode('home'); }}>
+        <button
+          className="btn-hof btn-hof-home"
+          onClick={() => {
+            sfx.play('click');
+            if (onReturnHome) {
+              onReturnHome();
+            } else {
+              if (pin) clearPlayerAuth(pin);
+              setMode('home');
+            }
+          }}
+        >
           <ArrowLeft size={18} />
           <span>العودة للصفحة الرئيسية</span>
         </button>

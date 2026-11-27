@@ -224,7 +224,7 @@ try {
 }
 const rtMod = await import('../resources/js/realtimeState.js');
 
-const { Leaderboard, StudentPlay, TeacherLive } = appMod;
+const { App, Leaderboard, StudentPlay, TeacherLive } = appMod;
 const { buildStudentRestorationState } = rtMod;
 
 const makePlayer = (id, name, score, extra = {}) => ({
@@ -902,4 +902,122 @@ test('StudentPlay: Restored show_mid_leaderboard caps mid-board to Top 5', () =>
   );
 
   assert.match(html, /من يتصدّر المنافسة؟/);
+});
+
+test('App: Refresh with saved student session prompts Continue vs Exit and obeys choice', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/sessions/555666/me')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          player: { id: 99, name: 'Omar', avatar: 'ninja', score: 350, streak: 1 },
+          session: {
+            pin: '555666',
+            title: 'Science Refresh Test',
+            status: 'active',
+            current_question_index: 0,
+            total_questions: 3,
+            question_state: 'answering',
+            show_mid_leaderboard: false,
+            state_version: 2,
+            current_question: sampleQuestion,
+          },
+          answered: false,
+          answer: null,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  const findByClass = (rootNode, cls) => {
+    let found = null;
+    const walk = (n) => {
+      if (found || !n) return;
+      if (n.nodeType === 1 && String(n.className || '').split(/\s+/).includes(cls)) {
+        found = n;
+        return;
+      }
+      (n.childNodes || []).forEach(walk);
+    };
+    walk(rootNode);
+    return found;
+  };
+  const clickReactBtn = (el) => {
+    const propsKey = Object.keys(el).find(k => k.startsWith('__reactProps$'));
+    assert.ok(propsKey && typeof el[propsKey]?.onClick === 'function', 'Button should have React onClick prop');
+    el[propsKey].onClick({ preventDefault: () => {}, stopPropagation: () => {} });
+  };
+
+  const seedSession = () => {
+    localStorage.setItem('tecorbi_last_session_pin', '555666');
+    localStorage.setItem('tecorbi_player_555666', JSON.stringify({ id: 99, token: 'tok-99', name: 'Omar' }));
+  };
+
+  const container = fakeDoc.createElement('div');
+  const root = createRoot(container);
+  const rootsToCleanup = [root];
+
+  try {
+    // 1. Mount after refresh -> shows Continue vs Exit prompt instead of forcing back into gameplay
+    seedSession();
+    await act(async () => {
+      root.render(React.createElement(App));
+      await new Promise(r => setTimeout(r, 30));
+      await flushMicrotasks(20);
+    });
+
+    assert.match(container.textContent, /هل تريد استكمال الجيم أم الخروج؟/);
+    assert.match(container.textContent, /555666/);
+    assert.match(container.textContent, /Omar/);
+    assert.doesNotMatch(container.textContent, /What is 2 \+ 2\?/);
+
+    // 2. Click "Exit" -> clears storage and stays on Home screen
+    const exitBtn = findByClass(container, 'btn-restore-exit');
+    assert.ok(exitBtn, 'Exit button must be rendered in restore prompt');
+    await act(async () => {
+      clickReactBtn(exitBtn);
+      await flushMicrotasks(12);
+    });
+
+    assert.equal(localStorage.getItem('tecorbi_last_session_pin'), null);
+    assert.equal(localStorage.getItem('tecorbi_player_555666'), null);
+    assert.doesNotMatch(container.textContent, /هل تريد استكمال الجيم أم الخروج؟/);
+
+    // 3. Re-seed and remount, then click "Continue" -> enters StudentPlay
+    await act(async () => {
+      root.unmount();
+    });
+    const container2 = fakeDoc.createElement('div');
+    const root2 = createRoot(container2);
+    rootsToCleanup.push(root2);
+    seedSession();
+    await act(async () => {
+      root2.render(React.createElement(App));
+      await new Promise(r => setTimeout(r, 30));
+      await flushMicrotasks(20);
+    });
+
+    const continueBtn = findByClass(container2, 'btn-restore-continue');
+    assert.ok(continueBtn, 'Continue button must be rendered in restore prompt');
+    await act(async () => {
+      clickReactBtn(continueBtn);
+      await flushMicrotasks(12);
+    });
+
+    assert.doesNotMatch(container2.textContent, /هل تريد استكمال الجيم أم الخروج؟/);
+    assert.match(container2.textContent, /What is 2 \+ 2\?/);
+  } finally {
+    await act(async () => {
+      for (const r of rootsToCleanup) {
+        try { r.unmount(); } catch {}
+      }
+    });
+    globalThis.fetch = realFetch;
+    localStorage.removeItem('tecorbi_last_session_pin');
+    localStorage.removeItem('tecorbi_player_555666');
+  }
 });
