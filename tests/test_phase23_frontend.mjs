@@ -1021,3 +1021,184 @@ test('App: Refresh with saved student session prompts Continue vs Exit and obeys
     localStorage.removeItem('tecorbi_player_555666');
   }
 });
+
+test('TeacherLive: Polling answered_count === player_count triggers auto-reveal without WebSocket', async () => {
+  const realFetch = globalThis.fetch;
+  let revealCalls = 0;
+  let isRevealedServer = false;
+
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.includes('/sessions/667788/reveal') && (opts.method || 'GET').toUpperCase() === 'POST') {
+      revealCalls++;
+      isRevealedServer = true;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ question_state: 'revealed', correct_choice_id: 7002, state_version: 3 }),
+      };
+    }
+    if (u.includes('/sessions/667788/question-stats')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          question_id: 700,
+          total_answers: 2,
+          stats: [
+            { choice_id: 7001, is_correct: false, count: 0 },
+            { choice_id: 7002, is_correct: true, count: 2 },
+          ],
+        }),
+      };
+    }
+    if (u.includes('/sessions/667788/poll')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          pin: '667788',
+          status: 'active',
+          current_question_index: 0,
+          total_questions: 2,
+          question_state: isRevealedServer ? 'revealed' : 'answering',
+          show_mid_leaderboard: false,
+          question_started_at: Date.now() - 2000,
+          player_count: 2,
+          answered_count: 2,
+          leaderboard: [makePlayer(1, 'Ali', 900), makePlayer(2, 'Mona', 850)],
+          current_question: {
+            ...sampleQuestion,
+            correct_choice_id: isRevealedServer ? 7002 : null,
+          },
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  const container = fakeDoc.createElement('div');
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(React.createElement(TeacherLive, {
+        session: { pin: '667788', title: 'Auto Reveal Poll Test' },
+        setSession: () => {},
+        setMode: () => {},
+        setNotice: () => {},
+      }));
+      await new Promise(r => setTimeout(r, 40));
+      await flushMicrotasks(20);
+    });
+
+    assert.equal(revealCalls, 1, 'TeacherLive should automatically POST /reveal once all players answered via /poll');
+    assert.match(container.textContent, /نتيجة السؤال \(صح أم خطأ\)/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('StudentPlay: Stays on question feedback after reveal, then opens Top 5 ONLY when server sets show_mid_leaderboard=true', async () => {
+  const realFetch = globalThis.fetch;
+  let serverShowMid = false;
+  let serverVersion = 3;
+
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('/sessions/998877/state')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          pin: '998877',
+          status: 'active',
+          current_question_index: 0,
+          total_questions: 2,
+          question_state: 'revealed',
+          show_mid_leaderboard: serverShowMid,
+          state_version: serverVersion,
+          question_started_at: Date.now() - 5000,
+          player_count: 2,
+          answered_count: 2,
+          leaderboard: [
+            { rank: 1, id: 10, name: 'Sara', avatar: 'ninja', score: 950, streak: 1 },
+            { rank: 2, id: 11, name: 'Omar', avatar: 'ninja', score: 700, streak: 0 },
+          ],
+          current_question: { ...sampleQuestion, correct_choice_id: 7002 },
+        }),
+      };
+    }
+    if (u.includes('/sessions/998877/my-result')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          answered: true,
+          is_correct: true,
+          points_earned: 950,
+          total_score: 950,
+          streak: 1,
+          choice_id: 7002,
+          correct_choice_id: 7002,
+        }),
+      };
+    }
+    if (u.includes('/sessions/998877/leaderboard')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          pin: '998877',
+          leaderboard: [
+            { rank: 1, id: 10, name: 'Sara', avatar: 'ninja', score: 950, streak: 1 },
+            { rank: 2, id: 11, name: 'Omar', avatar: 'ninja', score: 700, streak: 0 },
+          ],
+          my_rank: 1,
+          my_score: 950,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  const container = fakeDoc.createElement('div');
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(React.createElement(StudentPlay, {
+        session: { pin: '998877' },
+        player: { id: 10, name: 'Sara', avatar: 'ninja', score: 0, streak: 0, token: 't-10' },
+        setMode: () => {},
+        setNotice: () => {},
+        setPlayer: () => {},
+      }));
+      await new Promise(r => setTimeout(r, 40));
+      await flushMicrotasks(20);
+    });
+
+    // Revealed -> shows answer feedback (player didn't select, so time-expired msg), does NOT auto-open mid leaderboard
+    assert.match(container.textContent, /تم الكشف/);
+    assert.doesNotMatch(container.textContent, /من يتصدّر المنافسة؟/);
+
+    // Now teacher clicks Top 5 -> server sets show_mid_leaderboard = true & increments version
+    serverShowMid = true;
+    serverVersion = 4;
+
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 1150));
+      await flushMicrotasks(20);
+    });
+
+    assert.match(container.textContent, /من يتصدّر المنافسة؟/);
+    assert.match(container.textContent, /Sara/);
+    assert.match(container.textContent, /Omar/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    globalThis.fetch = realFetch;
+  }
+});

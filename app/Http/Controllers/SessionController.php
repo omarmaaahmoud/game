@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\GameSession;
 use App\Models\Question;
 use App\Models\Choice;
+use App\Models\Answer;
 use App\Events\PlayerJoined;
 use App\Events\GameStarted;
 use App\Events\QuestionChanged;
@@ -1028,6 +1029,9 @@ class SessionController extends Controller
         $pausedRemaining = $session->question_paused_remaining_ms !== null
             ? min($durationMs, (int) $session->question_paused_remaining_ms)
             : null;
+        $answeredCount = $currentQuestion
+            ? Answer::where('question_id', $currentQuestion->id)->count()
+            : 0;
 
         return [
             'id' => $session->id,
@@ -1042,6 +1046,7 @@ class SessionController extends Controller
             'question_paused_remaining_ms' => $pausedRemaining,
             'total_questions' => $totalQuestions,
             'player_count' => $session->players()->count(),
+            'answered_count' => $answeredCount,
             'timestamp' => now()->toISOString(),
             'leaderboard' => $session->players()->orderByDesc('score')->orderBy('id', 'asc')->take(12)->get(['id', 'name', 'avatar', 'score', 'streak'])->values()->map(function ($player, $index) {
                 return [

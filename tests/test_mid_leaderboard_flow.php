@@ -118,9 +118,26 @@ $midResp2 = $controller->showMidLeaderboard($session->pin);
 $midData2 = json_decode($midResp2->getContent(), true);
 ml_assert($midData2['state_version'] === $midData['state_version'], 'Repeated showMidLeaderboard call is idempotent');
 
-// Poll includes show_mid_leaderboard = true
+// Poll includes show_mid_leaderboard = true and answered_count
 $pollData = json_decode($controller->poll($session->pin)->getContent(), true);
 ml_assert($pollData['show_mid_leaderboard'] === true, 'poll() exposes show_mid_leaderboard=true');
+ml_assert(array_key_exists('answered_count', $pollData) && $pollData['answered_count'] === 0, 'poll() exposes answered_count=0 before answers');
+
+$q0 = $session->currentQuestion();
+$q0Choice = $q0->choices()->first();
+foreach ($session->players as $pl) {
+    \App\Models\Answer::create([
+        'player_id' => $pl->id,
+        'question_id' => $q0->id,
+        'choice_id' => $q0Choice->id,
+        'is_correct' => (bool) $q0Choice->is_correct,
+        'time_taken' => 1.0,
+        'points_earned' => $q0Choice->is_correct ? 900 : 0,
+        'answered_at' => now(),
+    ]);
+}
+$pollAfterAnswers = json_decode($controller->poll($session->pin)->getContent(), true);
+ml_assert($pollAfterAnswers['answered_count'] === 7 && $pollAfterAnswers['player_count'] === 7, 'poll() reflects answered_count=7 matching player_count=7');
 
 // 5. Teacher clicks Next Question -> resets show_mid_leaderboard to false on Q1
 $nextReq = Request::create("/api/sessions/{$session->pin}/next", 'POST', ['expected_index' => 0]);

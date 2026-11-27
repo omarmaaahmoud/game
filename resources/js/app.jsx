@@ -2155,7 +2155,7 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
   const syncedMidBoardQuestionIdRef = useRef(initialPoll?.show_mid_leaderboard ? (initialPoll?.current_question?.id ?? null) : null);
   const lastStatsQuestionIdRef = useRef(initialStats?.question_id ?? null);
   const autoRevealTriggeredRef = useRef(false);
-  const autoTop5TimerRef = useRef(null);
+  const autoRevealRetryTimerRef = useRef(null);
 
   const refresh = useCallback(async (targetPin = activePinRef.current) => {
     if (!targetPin || !isMountedRef.current) return;
@@ -2168,14 +2168,18 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       const p = await get(`/sessions/${targetPin}/poll`);
       if (!isMountedRef.current || activePinRef.current !== targetPin) return;
       const incomingQId = p.current_question?.id ?? null;
-      if (incomingQId !== lastQuestionIdRef.current || p.question_state === 'answering') {
+      const questionChanged = incomingQId !== lastQuestionIdRef.current;
+      if (questionChanged || p.question_state === 'answering') {
         lastQuestionIdRef.current = incomingQId;
         syncedMidBoardQuestionIdRef.current = null;
         lastStatsQuestionIdRef.current = null;
         setShowTop5(false);
         setQuestionStats(null);
         autoRevealTriggeredRef.current = false;
-        if (autoTop5TimerRef.current) { clearTimeout(autoTop5TimerRef.current); autoTop5TimerRef.current = null; }
+        if (autoRevealRetryTimerRef.current) { clearTimeout(autoRevealRetryTimerRef.current); autoRevealRetryTimerRef.current = null; }
+        if (questionChanged && p.answered_count === undefined) {
+          setAnsweredCount(0);
+        }
       } else if (
         p.question_state === 'revealed' &&
         p.show_mid_leaderboard === true &&
@@ -2183,6 +2187,9 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       ) {
         syncedMidBoardQuestionIdRef.current = incomingQId;
         setShowTop5(true);
+      }
+      if (p.answered_count !== undefined) {
+        setAnsweredCount(Number(p.answered_count) || 0);
       }
       setPoll(p);
       if (p.leaderboard) {
@@ -2211,13 +2218,12 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       if (!isMountedRef.current || activePinRef.current !== pin) return;
       const currentPoll = pollRef.current;
       if (currentPoll?.status === 'completed') return;
-      const isActive = currentPoll?.status === 'active' && currentPoll?.question_state === 'answering';
-      const delay = isActive ? 2000 : 1000;
+      const delay = 1000;
 
       timerRef.current = setTimeout(async () => {
         if (!isMountedRef.current || activePinRef.current !== pin) return;
         try {
-          if (!document.hidden) {
+          if (!document.hidden || pollRef.current?.status === 'active') {
             await refresh(pin);
           }
         } finally {
@@ -2316,7 +2322,7 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       clearInterval(clockInterval);
       unsubscribe();
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (autoTop5TimerRef.current) clearTimeout(autoTop5TimerRef.current);
+      if (autoRevealRetryTimerRef.current) clearTimeout(autoRevealRetryTimerRef.current);
     };
   }, [session?.pin, refresh, setMode]);
 
@@ -2325,11 +2331,19 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
     if (!poll || poll.question_state !== 'answering' || poll.status !== 'active') return;
     if (autoRevealTriggeredRef.current || isProcessing) return;
     const students = poll.player_count || leaderboard.length || 0;
-    const allAnswered = answeredCount > 0 && students > 0 && answeredCount >= students;
-    const timeExpired = liveRemaining !== null && liveRemaining <= 0;
+    const effectiveAnswered = Math.max(answeredCount, Number(poll.answered_count || 0));
+    const allAnswered = effectiveAnswered > 0 && students > 0 && effectiveAnswered >= students;
+    const timeExpired = Boolean(poll.question_started_at) && liveRemaining !== null && liveRemaining <= 0;
     if (allAnswered || timeExpired) {
       autoRevealTriggeredRef.current = true;
-      revealAnswer();
+      revealAnswer().then((ok) => {
+        if (!ok && isMountedRef.current) {
+          if (autoRevealRetryTimerRef.current) clearTimeout(autoRevealRetryTimerRef.current);
+          autoRevealRetryTimerRef.current = setTimeout(() => {
+            autoRevealTriggeredRef.current = false;
+          }, 1500);
+        }
+      });
     }
   });
 
@@ -2367,7 +2381,7 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
       syncedMidBoardQuestionIdRef.current = null;
       lastStatsQuestionIdRef.current = null;
       autoRevealTriggeredRef.current = false;
-      if (autoTop5TimerRef.current) { clearTimeout(autoTop5TimerRef.current); autoTop5TimerRef.current = null; }
+      if (autoRevealRetryTimerRef.current) { clearTimeout(autoRevealRetryTimerRef.current); autoRevealRetryTimerRef.current = null; }
       if (res && res.status === 'completed') {
         setMode('leaderboard');
         return;
@@ -2382,7 +2396,7 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
   }
 
   async function revealAnswer() {
-    if (isProcessing) return;
+    if (isProcessing) return false;
     setIsProcessing(true);
     setShowTop5(false);
     syncedMidBoardQuestionIdRef.current = null;
@@ -2390,9 +2404,11 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
     try {
       await teacherPost(session.pin, `/sessions/${session.pin}/reveal`);
       await refresh();
+      return true;
     } catch (e) {
       console.error(e);
       if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -2401,14 +2417,20 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
   async function goToTop5() {
     if (isProcessing) return;
     setIsProcessing(true);
-    syncedMidBoardQuestionIdRef.current = poll?.current_question?.id ?? null;
-    setShowTop5(true);
     sfx.play('join');
     try {
       await teacherPost(session.pin, `/sessions/${session.pin}/mid-leaderboard`);
+      syncedMidBoardQuestionIdRef.current = poll?.current_question?.id ?? null;
+      setShowTop5(true);
       await refresh();
     } catch (e) {
-      if (e?.status === 403) setNotice('جلسة المعلم غير مصرحة');
+      syncedMidBoardQuestionIdRef.current = null;
+      setShowTop5(false);
+      if (e?.status === 403) {
+        setNotice('جلسة المعلم غير مصرحة');
+      } else {
+        setNotice('تعذر عرض الترتيب للطلاب، حاول مرة أخرى');
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -3257,17 +3279,27 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
   }, [fetchMyResult, applyResultSoundAndScore]);
 
   const openMidLeaderboard = useCallback(async (targetPin, boardOverride = null) => {
-    if (!isMountedRef.current || !targetPin || sessionRef.current?.pin !== targetPin) return;
-    if (Array.isArray(boardOverride) && boardOverride.length > 0) {
+    if (!isMountedRef.current || !targetPin || String(sessionRef.current?.pin) !== String(targetPin)) return;
+    const hadBoardOverride = Array.isArray(boardOverride);
+    if (hadBoardOverride) {
       setMidLeaderboard(boardOverride);
       const myId = playerRef.current?.id;
       const idx = boardOverride.findIndex(p => p.id === myId);
       setMyRank(idx >= 0 ? idx + 1 : null);
+      const myP = boardOverride.find(p => p.id === myId);
+      if (myP && myP.score !== undefined) {
+        setPlayer(p => (p ? { ...p, score: myP.score } : p));
+      }
+      if (!showMidBoardRef.current) {
+        showMidBoardRef.current = true;
+        setShowMidBoard(true);
+        sfx.play('join');
+      }
     }
     try {
       const activeToken = playerRef.current?.token || getPlayerAuth(targetPin)?.token;
       const lb = await playerGet(targetPin, `/sessions/${targetPin}/leaderboard`, activeToken);
-      if (!isMountedRef.current || sessionRef.current?.pin !== targetPin) return;
+      if (!isMountedRef.current || String(sessionRef.current?.pin) !== String(targetPin)) return;
       const board = lb.leaderboard || [];
       setMidLeaderboard(board);
       if (lb.my_rank !== undefined && lb.my_rank !== null) {
@@ -3280,11 +3312,13 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       if (lb.my_score !== undefined && lb.my_score !== null) {
         setPlayer(p => (p ? { ...p, score: lb.my_score } : p));
       }
-      showMidBoardRef.current = true;
-      setShowMidBoard(true);
-      sfx.play('join');
+      if (!showMidBoardRef.current) {
+        showMidBoardRef.current = true;
+        setShowMidBoard(true);
+        sfx.play('join');
+      }
     } catch {
-      if (Array.isArray(boardOverride) && boardOverride.length > 0 && isMountedRef.current) {
+      if (!showMidBoardRef.current && isMountedRef.current) {
         showMidBoardRef.current = true;
         setShowMidBoard(true);
       }
@@ -3367,11 +3401,35 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       },
     });
 
-    if (evalRes.action === 'drop_stale' || evalRes.action === 'drop_duplicate' || evalRes.action === 'drop_mismatched_question') {
+    if (evalRes.action === 'drop_stale' || evalRes.action === 'drop_mismatched_question') {
+      return;
+    }
+
+    if (evalRes.action === 'drop_duplicate') {
+      const isAuthoritative = source === 'poll' || source === 'recovery';
+      if (
+        isAuthoritative &&
+        data.question_state === 'revealed' &&
+        data.current_question?.id != null &&
+        Number(data.current_question.id) === Number(lastQId.current)
+      ) {
+        if (typeof data.show_mid_leaderboard === 'boolean') {
+          serverControlsMidBoardRef.current = true;
+        }
+        if (data.show_mid_leaderboard === true && !showMidBoardRef.current) {
+          openMidLeaderboard(data.pin || sessionRef.current?.pin, data.leaderboard);
+        } else if (data.show_mid_leaderboard === false && showMidBoardRef.current) {
+          showMidBoardRef.current = false;
+          setShowMidBoard(false);
+        }
+      }
       return;
     }
 
     if (evalRes.action === 'apply_reveal_only') {
+      if (typeof data.show_mid_leaderboard === 'boolean') {
+        serverControlsMidBoardRef.current = true;
+      }
       if (
         data.question_state === 'revealed' &&
         !isRevealedRef.current &&
@@ -3379,6 +3437,15 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         Number(data.current_question.id) === Number(lastQId.current)
       ) {
         triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
+      }
+      if (
+        data.question_state === 'revealed' &&
+        data.show_mid_leaderboard === true &&
+        !showMidBoardRef.current &&
+        data.current_question?.id != null &&
+        Number(data.current_question.id) === Number(lastQId.current)
+      ) {
+        openMidLeaderboard(data.pin || sessionRef.current?.pin, data.leaderboard);
       }
       return;
     }
