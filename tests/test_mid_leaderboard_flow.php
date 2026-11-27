@@ -24,7 +24,9 @@ use Illuminate\Http\Request;
 use App\Models\GameSession;
 use App\Models\Player;
 use App\Events\MidLeaderboardShown;
+use App\Events\AnswerRevealed;
 use App\Http\Controllers\SessionController;
+use App\Http\Controllers\GameController;
 
 Artisan::call('migrate', ['--force' => true]);
 
@@ -145,6 +147,100 @@ $nextResp = $controller->next($nextReq, $session->pin);
 $s = $session->fresh();
 ml_assert($nextResp->getStatusCode() === 200 && (int) $s->current_question_index === 1, 'Advanced to Q1');
 ml_assert((bool) $s->show_mid_leaderboard === false && $s->question_state === 'answering', 'Q1 resets show_mid_leaderboard=false and question_state=answering');
+
+// 6. Server-side auto-reveal: solo player answering reveals immediately without teacher clicking reveal()
+$soloSession = GameSession::create([
+    'pin' => GameSession::generatePin(),
+    'teacher_token_hash' => hash('sha256', 'solo-tok'),
+    'teacher_name' => 'Mr. Solo',
+    'title' => 'Solo Auto Reveal Test',
+]);
+$soloQ0 = $soloSession->questions()->create(['question_text' => 'Solo Q0', 'order' => 0, 'time_limit' => 20]);
+$soloRight = $soloQ0->choices()->create(['choice_text' => 'Yes', 'is_correct' => true, 'order' => 0]);
+$soloQ0->choices()->create(['choice_text' => 'No', 'is_correct' => false, 'order' => 1]);
+$soloQ1 = $soloSession->questions()->create(['question_text' => 'Solo Q1', 'order' => 1, 'time_limit' => 20]);
+$soloQ1->choices()->create(['choice_text' => 'Right', 'is_correct' => true, 'order' => 0]);
+$soloQ1->choices()->create(['choice_text' => 'Wrong', 'is_correct' => false, 'order' => 1]);
+
+$soloJoin = json_decode($controller->join(Request::create("/api/sessions/{$soloSession->pin}/join", 'POST', [
+    'name' => 'SoloHero',
+    'avatar' => 'ninja',
+]), $soloSession->pin)->getContent(), true);
+$controller->start($soloSession->pin);
+$soloSession->refresh();
+$soloSession->update(['question_started_at' => (int) round(microtime(true) * 1000) - 2000]);
+
+$revealedBroadcast = null;
+Event::listen(AnswerRevealed::class, function ($e) use (&$revealedBroadcast) {
+    $revealedBroadcast = $e->broadcastWith();
+});
+
+$gameCtrl = new GameController();
+config(['quiz.reveal_on_answer' => false]);
+$soloAnsReq = Request::create("/api/sessions/{$soloSession->pin}/answer", 'POST', [
+    'player_id' => $soloJoin['player']['id'],
+    'choice_id' => $soloRight->id,
+]);
+$soloAnsReq->headers->set('X-Player-Token', $soloJoin['player_token']);
+$soloAnsResp = $gameCtrl->answer($soloAnsReq, $soloSession->pin);
+$soloAnsData = json_decode($soloAnsResp->getContent(), true);
+$soloSession->refresh();
+
+ml_assert($soloAnsResp->getStatusCode() === 200 && $soloAnsData['accepted'] === true, 'Solo player answer accepted');
+ml_assert(!isset($soloAnsData['is_correct']) && !isset($soloAnsData['correct_choice_id']), 'Solo /answer response still never leaks is_correct or correct_choice_id');
+ml_assert(($soloAnsData['question_state'] ?? null) === 'revealed' && ($soloAnsData['all_answered'] ?? false) === true, 'Solo /answer returns question_state=revealed & all_answered=true');
+ml_assert($soloSession->question_state === 'revealed' && (bool) $soloSession->show_mid_leaderboard === false, 'Solo session auto-revealed immediately with show_mid_leaderboard=false');
+ml_assert($revealedBroadcast !== null && (int) $revealedBroadcast['correct_choice_id'] === (int) $soloRight->id, 'AnswerRevealed broadcast emitted on solo auto-reveal');
+
+$soloMyResReq = Request::create("/api/sessions/{$soloSession->pin}/my-result?question_id={$soloQ0->id}", 'GET');
+$soloMyResReq->headers->set('X-Player-Token', $soloJoin['player_token']);
+$soloMyResResp = $gameCtrl->myResult($soloMyResReq, $soloSession->pin);
+$soloMyResData = json_decode($soloMyResResp->getContent(), true);
+ml_assert($soloMyResResp->getStatusCode() === 200 && $soloMyResData['is_correct'] === true, 'Solo player can immediately fetch my-result after auto-reveal');
+
+// 7. Multi-player Q1: stays answering on 1/2, auto-reveals immediately on 2/2
+$p2Join = json_decode($controller->join(Request::create("/api/sessions/{$soloSession->pin}/join", 'POST', [
+    'name' => 'SecondPlayer',
+    'avatar' => 'robot',
+]), $soloSession->pin)->getContent(), true);
+$controller->next(Request::create("/api/sessions/{$soloSession->pin}/next", 'POST', ['expected_index' => 0]), $soloSession->pin);
+$soloSession->refresh();
+$soloSession->update(['question_started_at' => (int) round(microtime(true) * 1000) - 2000]);
+$soloQ1Choice = $soloQ1->choices()->where('is_correct', true)->first();
+
+$p1Req = Request::create("/api/sessions/{$soloSession->pin}/answer", 'POST', [
+    'player_id' => $soloJoin['player']['id'],
+    'choice_id' => $soloQ1Choice->id,
+]);
+$p1Req->headers->set('X-Player-Token', $soloJoin['player_token']);
+$p1Data = json_decode($gameCtrl->answer($p1Req, $soloSession->pin)->getContent(), true);
+$soloSession->refresh();
+ml_assert($soloSession->question_state === 'answering' && !isset($p1Data['question_state']), '1/2 players answered: stays answering');
+
+$p2Req = Request::create("/api/sessions/{$soloSession->pin}/answer", 'POST', [
+    'player_id' => $p2Join['player']['id'],
+    'choice_id' => $soloQ1Choice->id,
+]);
+$p2Req->headers->set('X-Player-Token', $p2Join['player_token']);
+$p2Data = json_decode($gameCtrl->answer($p2Req, $soloSession->pin)->getContent(), true);
+$soloSession->refresh();
+ml_assert($soloSession->question_state === 'revealed' && ($p2Data['question_state'] ?? null) === 'revealed', '2/2 players answered: auto-reveals immediately');
+
+// 8. Expired timer auto-reveals on poll() even if no one answered
+$expSession = GameSession::create([
+    'pin' => GameSession::generatePin(),
+    'teacher_token_hash' => hash('sha256', 'exp-tok'),
+    'teacher_name' => 'Mr. Exp',
+    'title' => 'Expiry Auto Reveal',
+]);
+$expQ = $expSession->questions()->create(['question_text' => 'Exp Q0', 'order' => 0, 'time_limit' => 10]);
+$expRight = $expQ->choices()->create(['choice_text' => 'A', 'is_correct' => true, 'order' => 0]);
+$expQ->choices()->create(['choice_text' => 'B', 'is_correct' => false, 'order' => 1]);
+$controller->start($expSession->pin);
+$expSession->refresh();
+$expSession->update(['question_started_at' => (int) round(microtime(true) * 1000) - 20000]);
+$expPoll = json_decode($controller->poll($expSession->pin)->getContent(), true);
+ml_assert($expPoll['question_state'] === 'revealed' && (int) ($expPoll['current_question']['correct_choice_id'] ?? 0) === (int) $expRight->id, 'Expired question auto-reveals on poll()');
 
 echo "\nSummary: {$passed} passed, {$failed} failed\n";
 exit($failed > 0 ? 1 : 0);

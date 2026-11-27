@@ -6,6 +6,8 @@ use App\Models\GameSession;
 use App\Models\Player;
 use App\Models\Answer;
 use App\Events\StudentAnswered;
+use App\Events\AnswerRevealed;
+use App\Events\LeaderboardUpdated;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -80,7 +82,21 @@ class GameController extends Controller
             ], 403);
         }
 
-        // 2. Check game status
+        // 2. Check duplicate answer before revealed-state rejection (handles solo/last-player double-tap gracefully)
+        $question = $session->currentQuestion();
+        if ($session->status === 'active' && $question) {
+            $alreadyAnswered = Answer::where('player_id', $player->id)
+                ->where('question_id', $question->id)
+                ->exists();
+            if ($alreadyAnswered) {
+                return response()->json([
+                    'error' => 'Already answered this question',
+                    'code' => 'ALREADY_ANSWERED',
+                ], 409);
+            }
+        }
+
+        // 3. Check game status
         if ($session->status !== 'active' || $session->question_state !== 'answering') {
             return response()->json([
                 'error' => 'Game is not active',
@@ -96,7 +112,6 @@ class GameController extends Controller
             ], 422);
         }
 
-        $question = $session->currentQuestion();
         if (!$question) {
             return response()->json([
                 'error' => 'No active question',
@@ -150,8 +165,9 @@ class GameController extends Controller
         }
 
         // Atomic write-first player update + answer insert to prevent concurrent reset/state-change orphans & double scoring (S1.3)
+        $autoRevealPayload = null;
         try {
-            DB::transaction(function () use ($session, $player, $question, $choice, $isCorrect, $timeTaken, $points) {
+            DB::transaction(function () use ($session, $player, $question, $choice, $isCorrect, $timeTaken, $points, &$autoRevealPayload) {
                 // First SQL in transaction: conditional write verifying player still exists and session is still active & answering
                 $affectedPlayer = DB::table('players')
                     ->where('id', $player->id)
@@ -184,10 +200,21 @@ class GameController extends Controller
                     'answered_at' => now(),
                 ]);
 
-                DB::afterCommit(function () use ($session, $player, $question) {
-                    $answeredCount = Answer::where('question_id', $question->id)->count();
-                    $totalPlayers = $session->players()->count();
+                $answeredCount = Answer::where('question_id', $question->id)->count();
+                $totalPlayers = DB::table('players')->where('game_session_id', $session->id)->count();
+                $revealData = ($totalPlayers > 0 && $answeredCount >= $totalPlayers)
+                    ? $session->revealCurrentQuestionInTransaction($question)
+                    : null;
 
+                if ($revealData !== null) {
+                    $autoRevealPayload = [
+                        'question_state' => 'revealed',
+                        'state_version' => $revealData['state_version'],
+                        'all_answered' => true,
+                    ];
+                }
+
+                DB::afterCommit(function () use ($session, $player, $answeredCount, $totalPlayers, $revealData) {
                     // Broadcast StudentAnswered WITHOUT player_name for privacy (S1.5)
                     broadcast(new StudentAnswered(
                         $session->pin,
@@ -196,6 +223,16 @@ class GameController extends Controller
                         $answeredCount,
                         $totalPlayers
                     ));
+
+                    if ($revealData !== null) {
+                        broadcast(new AnswerRevealed(
+                            $session->pin,
+                            $revealData['correct_choice_id'],
+                            $revealData['question_id'],
+                            $revealData['state_version']
+                        ));
+                        broadcast(new LeaderboardUpdated($session->pin, $revealData['leaderboard']));
+                    }
                 });
             }, 5);
         } catch (UniqueConstraintViolationException $e) {
@@ -230,21 +267,29 @@ class GameController extends Controller
         // When QUIZ_REVEAL_ON_ANSWER is false (default), do not reveal answer or score early
         $revealOnAnswer = (bool) config('quiz.reveal_on_answer', false);
         if (!$revealOnAnswer) {
-            return response()->json([
+            $payload = [
                 'accepted' => true,
                 'server_now_ms' => (int) round(microtime(true) * 1000),
-            ]);
+            ];
+            if ($autoRevealPayload !== null) {
+                $payload = array_merge($payload, $autoRevealPayload);
+            }
+            return response()->json($payload);
         }
 
         $freshPlayer = $player->fresh();
-        return response()->json([
+        $legacyPayload = [
             'is_correct' => $isCorrect,
             'points_earned' => $points,
             'total_score' => $freshPlayer->score,
             'streak' => $freshPlayer->streak,
             'correct_choice_id' => $choice->question->choices()->where('is_correct', true)->first()?->id,
             'server_now_ms' => (int) round(microtime(true) * 1000),
-        ]);
+        ];
+        if ($autoRevealPayload !== null) {
+            $legacyPayload = array_merge($legacyPayload, $autoRevealPayload);
+        }
+        return response()->json($legacyPayload);
     }
 
     // Student gets their own result for the current question ONLY after reveal (S1.6 with question_id)

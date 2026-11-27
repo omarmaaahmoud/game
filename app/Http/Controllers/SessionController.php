@@ -535,17 +535,9 @@ class SessionController extends Controller
             $currentQuestion = $session->currentQuestion();
 
             return DB::transaction(function () use ($session, $currentVersion, $currentQuestion) {
-                $affected = GameSession::where('id', $session->id)
-                    ->where('status', 'active')
-                    ->where('question_state', 'answering')
-                    ->where('state_version', $currentVersion)
-                    ->update([
-                        'question_state' => 'revealed',
-                        'show_mid_leaderboard' => false,
-                        'state_version' => $currentVersion + 1,
-                    ]);
+                $revealData = $session->revealCurrentQuestionInTransaction($currentQuestion, $currentVersion);
 
-                if ($affected === 0) {
+                if ($revealData === null) {
                     $session->refresh();
                     $q = $session->currentQuestion();
                     $correctChoice = $q?->choices()->where('is_correct', true)->first();
@@ -557,40 +549,20 @@ class SessionController extends Controller
                     ]);
                 }
 
-                if ($currentQuestion) {
-                    $currentQuestion->update(['is_revealed' => true]);
-                }
-                $correctChoice = $currentQuestion?->choices()->where('is_correct', true)->first();
-                $correctChoiceId = $correctChoice ? (int) $correctChoice->id : 0;
-                $newVersion = $currentVersion + 1;
-
-                $leaderboard = $session->players()
-                    ->orderByDesc('score')
-                    ->orderBy('id', 'asc')
-                    ->take(12)
-                    ->get(['id', 'name', 'avatar', 'score', 'streak'])
-                    ->values()
-                    ->map(function ($p, $index) {
-                        return [
-                            'rank' => $index + 1,
-                            'id' => $p->id,
-                            'name' => $p->name,
-                            'avatar' => $p->avatar,
-                            'score' => $p->score,
-                            'streak' => $p->streak,
-                        ];
-                    })
-                    ->all();
-
-                DB::afterCommit(function () use ($session, $correctChoiceId, $currentQuestion, $newVersion, $leaderboard) {
-                    broadcast(new AnswerRevealed($session->pin, $correctChoiceId, $currentQuestion?->id, $newVersion));
-                    broadcast(new LeaderboardUpdated($session->pin, $leaderboard));
+                DB::afterCommit(function () use ($session, $revealData) {
+                    broadcast(new AnswerRevealed(
+                        $session->pin,
+                        $revealData['correct_choice_id'],
+                        $revealData['question_id'],
+                        $revealData['state_version']
+                    ));
+                    broadcast(new LeaderboardUpdated($session->pin, $revealData['leaderboard']));
                 });
 
                 return response()->json([
                     'question_state' => 'revealed',
-                    'correct_choice_id' => $correctChoiceId,
-                    'state_version' => $newVersion,
+                    'correct_choice_id' => $revealData['correct_choice_id'],
+                    'state_version' => $revealData['state_version'],
                     'server_now_ms' => (int) round(microtime(true) * 1000),
                 ]);
             }, 5);
@@ -1077,6 +1049,56 @@ class SessionController extends Controller
         ];
     }
 
+    /**
+     * Auto-reveal an expired answering question on read so students see results even if teacher tab is throttled.
+     */
+    private function autoRevealIfExpired(GameSession $session): void
+    {
+        if (
+            $session->status !== 'active'
+            || ($session->question_state ?? 'answering') !== 'answering'
+            || $session->question_started_at === null
+        ) {
+            return;
+        }
+
+        $currentQuestion = $session->currentQuestion();
+        if (!$currentQuestion) {
+            return;
+        }
+
+        $graceMs = (int) config('quiz.answer_grace_ms', 1000);
+        $durationMs = max(1, (int) ($currentQuestion->time_limit ?: 20)) * 1000;
+        $deadlineMs = ((int) $session->question_started_at) + $durationMs + $graceMs;
+        $nowMs = (int) round(microtime(true) * 1000);
+
+        if ($nowMs <= $deadlineMs) {
+            return;
+        }
+
+        $currentVersion = (int) $session->state_version;
+        try {
+            DB::transaction(function () use ($session, $currentQuestion, $currentVersion) {
+                $revealData = $session->revealCurrentQuestionInTransaction($currentQuestion, $currentVersion);
+                if ($revealData !== null) {
+                    DB::afterCommit(function () use ($session, $revealData) {
+                        broadcast(new AnswerRevealed(
+                            $session->pin,
+                            $revealData['correct_choice_id'],
+                            $revealData['question_id'],
+                            $revealData['state_version']
+                        ));
+                        broadcast(new LeaderboardUpdated($session->pin, $revealData['leaderboard']));
+                    });
+                }
+            }, 5);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Best-effort auto-reveal on read; ignore transient lock contention
+        }
+
+        $session->refresh();
+    }
+
     // Get authenticated player state (reconnection / tab switch)
     public function me(Request $request, string $pin): JsonResponse
     {
@@ -1105,6 +1127,8 @@ class SessionController extends Controller
                 'code' => 'UNAUTHORIZED_PLAYER',
             ], 403);
         }
+
+        $this->autoRevealIfExpired($session);
 
         $currentQuestion = $session->currentQuestion();
         $answer = null;
@@ -1151,6 +1175,8 @@ class SessionController extends Controller
             ->with(['questions.choices', 'players'])
             ->firstOrFail();
 
+        $this->autoRevealIfExpired($session);
+
         $data = $this->serializeSessionState($session);
         $data['server_now_ms'] = (int) round(microtime(true) * 1000);
 
@@ -1163,6 +1189,8 @@ class SessionController extends Controller
         $session = GameSession::where('pin', $pin)
             ->with(['questions.choices', 'players'])
             ->firstOrFail();
+
+        $this->autoRevealIfExpired($session);
 
         $data = $this->serializeSessionState($session);
         $data['server_now_ms'] = (int) round(microtime(true) * 1000);

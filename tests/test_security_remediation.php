@@ -354,7 +354,7 @@ echo "\n── Part 3: Answer Secrecy & My-Result Endpoint (SEC-03) ──\n";
     assert_true(!isset($data['streak']), 'Response does NOT leak streak');
 }
 
-// Test 3.2: GET /my-result before reveal returns 409 Conflict
+// Test 3.2: GET /my-result before reveal returns 409 Conflict (while another player has not answered yet)
 {
     [$session, $teacherToken] = createSecureSession();
     $sessionController->start($session->pin);
@@ -364,8 +364,9 @@ echo "\n── Part 3: Answer Secrecy & My-Result Endpoint (SEC-03) ──\n";
     $currentQuestion = $session->currentQuestion();
     $correctChoice = $currentQuestion->choices()->where('is_correct', true)->first();
     [$player, $playerToken] = createSecurePlayer($session, 'Eager Student', 'eager-tok');
+    createSecurePlayer($session, 'Waiting Student', 'waiting-tok');
 
-    // Submit answer while question_state is still answering
+    // Submit answer while question_state is still answering (Waiting Student hasn't answered yet)
     $reqAns = Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
         'choice_id' => $correctChoice->id,

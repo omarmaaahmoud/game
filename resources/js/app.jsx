@@ -3944,7 +3944,7 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       if (delayOverride !== null) {
         delay = delayOverride;
       } else if (gameStatusRef.current === 'active' && !isRevealedRef.current && startedAt) {
-        delay = 1500;
+        delay = 1000;
         const remaining = limit - (now - startedAt) / 1000;
         if (remaining > 0.8 && remaining < 2.5 && !preDeadlinePolledRef.current) {
           delay = Math.max(300, Math.round((remaining - 0.5) * 1000));
@@ -4025,6 +4025,16 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         // Secure mode (QUIZ_REVEAL_ON_ANSWER=false): result fetched upon reveal
         pendingResultRef.current = { accepted: true };
         setPendingResult({ accepted: true });
+        if (data?.question_state === 'revealed') {
+          const v = Number(data.state_version || 0);
+          if (v > lastProcessedVersionRef.current) {
+            lastProcessedVersionRef.current = v;
+            currentVersionRef.current = v;
+          }
+          if (!isRevealedRef.current) {
+            triggerReveal(data.correct_choice_id ?? null, lastQId.current);
+          }
+        }
       }
     } catch (e) {
       submittingRef.current = false;

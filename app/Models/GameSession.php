@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 class GameSession extends Model
 {
@@ -60,5 +61,70 @@ class GameSession extends Model
         } while (static::where('pin', $pin)->where('status', '!=', 'completed')->exists());
 
         return $pin;
+    }
+
+    /**
+     * Atomically reveal the active answering question inside the caller's transaction.
+     *
+     * @return array{question_id: int|null, correct_choice_id: int, state_version: int, leaderboard: array}|null
+     */
+    public function revealCurrentQuestionInTransaction(?Question $currentQuestion = null, ?int $expectedVersion = null): ?array
+    {
+        $question = $currentQuestion ?? $this->currentQuestion();
+        $version = $expectedVersion ?? (int) DB::table('game_sessions')
+            ->where('id', $this->id)
+            ->value('state_version');
+
+        $query = DB::table('game_sessions')
+            ->where('id', $this->id)
+            ->where('status', 'active')
+            ->where('question_state', 'answering')
+            ->where('state_version', $version);
+
+        if ($question) {
+            $query->where('current_question_index', $question->order);
+        }
+
+        $affected = $query->update([
+            'question_state' => 'revealed',
+            'show_mid_leaderboard' => false,
+            'state_version' => $version + 1,
+            'updated_at' => now(),
+        ]);
+
+        if ($affected === 0) {
+            return null;
+        }
+
+        if ($question) {
+            DB::table('questions')->where('id', $question->id)->update(['is_revealed' => true]);
+        }
+
+        $correctChoiceId = $question
+            ? (int) ($question->choices()->where('is_correct', true)->value('id') ?? 0)
+            : 0;
+
+        $leaderboard = $this->players()
+            ->orderByDesc('score')
+            ->orderBy('id', 'asc')
+            ->take(12)
+            ->get(['id', 'name', 'avatar', 'score', 'streak'])
+            ->values()
+            ->map(fn ($p, $index) => [
+                'rank' => $index + 1,
+                'id' => $p->id,
+                'name' => $p->name,
+                'avatar' => $p->avatar,
+                'score' => $p->score,
+                'streak' => $p->streak,
+            ])
+            ->all();
+
+        return [
+            'question_id' => $question?->id,
+            'correct_choice_id' => $correctChoiceId,
+            'state_version' => $version + 1,
+            'leaderboard' => $leaderboard,
+        ];
     }
 }

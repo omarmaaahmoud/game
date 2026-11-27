@@ -1202,3 +1202,110 @@ test('StudentPlay: Stays on question feedback after reveal, then opens Top 5 ONL
     globalThis.fetch = realFetch;
   }
 });
+
+test('StudentPlay: Solo/last player answer returning question_state=revealed triggers immediate reveal & my-result without waiting for poll', async () => {
+  const realFetch = globalThis.fetch;
+  let myResultCalled = 0;
+
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    const method = (opts?.method || 'GET').toUpperCase();
+    if (u.includes('/sessions/776655/state')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          pin: '776655',
+          status: 'active',
+          current_question_index: 0,
+          total_questions: 2,
+          question_state: 'answering',
+          show_mid_leaderboard: false,
+          state_version: 2,
+          question_started_at: Date.now() - 2000,
+          player_count: 1,
+          answered_count: 0,
+          leaderboard: [{ rank: 1, id: 10, name: 'Solo', avatar: 'ninja', score: 0, streak: 0 }],
+          current_question: sampleQuestion,
+        }),
+      };
+    }
+    if (u.includes('/sessions/776655/answer') && method === 'POST') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          accepted: true,
+          question_state: 'revealed',
+          state_version: 3,
+          all_answered: true,
+          server_now_ms: Date.now(),
+        }),
+      };
+    }
+    if (u.includes('/sessions/776655/my-result')) {
+      myResultCalled++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          answered: true,
+          is_correct: true,
+          points_earned: 920,
+          total_score: 920,
+          streak: 1,
+          choice_id: 7002,
+          correct_choice_id: 7002,
+        }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+
+  const container = fakeDoc.createElement('div');
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(React.createElement(StudentPlay, {
+        session: { pin: '776655' },
+        player: { id: 10, name: 'Solo', avatar: 'ninja', score: 0, streak: 0, token: 't-solo' },
+        setMode: () => {},
+        setNotice: () => {},
+        setPlayer: () => {},
+      }));
+      await new Promise(r => setTimeout(r, 40));
+      await flushMicrotasks(20);
+    });
+
+    const findButtons = (rootNode) => {
+      const out = [];
+      const walk = (n) => {
+        if (!n) return;
+        if (typeof n.className === 'string' && n.className.split(/\s+/).includes('kahoot-btn')) out.push(n);
+        (n.childNodes || []).forEach(walk);
+      };
+      walk(rootNode);
+      return out;
+    };
+    const buttons = findButtons(container);
+    assert.ok(buttons.length >= 2, 'Choice buttons rendered');
+    const propsKey = Object.keys(buttons[1]).find(k => k.startsWith('__reactProps$'));
+    assert.ok(propsKey && typeof buttons[1][propsKey]?.onClick === 'function', 'Choice button has React onClick');
+
+    await act(async () => {
+      buttons[1][propsKey].onClick({ preventDefault: () => {}, stopPropagation: () => {} });
+      await new Promise(r => setTimeout(r, 40));
+      await flushMicrotasks(20);
+    });
+
+    assert.ok(myResultCalled >= 1, 'my-result fetched immediately after solo answer revealed');
+    assert.match(container.textContent, /تم الكشف/);
+    assert.match(container.textContent, /إجابة صحيحة/);
+    assert.doesNotMatch(container.textContent, /من يتصدّر المنافسة؟/);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    globalThis.fetch = realFetch;
+  }
+});

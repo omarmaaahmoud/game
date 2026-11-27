@@ -205,6 +205,10 @@ echo "\n── Part 3: Student Reconnection GET /me Across All States ──\n";
         'name' => 'ReconnB',
         'avatar' => 'robot',
     ]), $pin)->getContent(), true);
+    $jC = json_decode($sessionCtrl->join(Request::create("/api/sessions/{$pin}/join", 'POST', [
+        'name' => 'ReconnC',
+        'avatar' => 'wizard',
+    ]), $pin)->getContent(), true);
 
     $tokenA = $jA['player_token'];
     $idA = $jA['player']['id'];
