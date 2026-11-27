@@ -10,7 +10,7 @@ import {
   Sparkles, Target, Plus, X, Check, Volume2, Rocket, ShieldCheck, LogIn,
   UserPlus, CircleHelp, Radio, Medal, Flame, Award, Heart, CheckSquare,
   Smartphone, Lock, Eye, CheckCheck, RotateCcw, Home, ChevronDown, Shield, Share2,
-  Monitor, Settings, FileSpreadsheet, Upload, Download, AlertCircle
+  Monitor, Settings, FileSpreadsheet, Upload, Download, AlertCircle, Lightbulb, BarChart3
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
@@ -4223,21 +4223,92 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
   const effectiveCorrectId = correctChoiceId || pendingResult?.correct_choice_id;
   const hasVerifiedResult = pendingResult != null && typeof pendingResult.is_correct === 'boolean';
   const isVerifyingAnswer = isRevealed && selected !== null && !hasVerifiedResult;
+  const timeLimitSec = Math.max(1, question?.time_limit || 20);
+  const timerPct = isRevealed
+    ? 0
+    : isLeadPeriod
+      ? 100
+      : Math.max(0, Math.min(100, Math.round((timerDisplay / timeLimitSec) * 100)));
 
   return (
-    <main className="play-arena-container">
+    <main className="play-arena-container play-theme-purple">
+      {/* Purple Wave & Dot Scene Background */}
+      <div className="play-purple-scene-bg" aria-hidden="true">
+        <svg className="play-purple-waves-svg" viewBox="0 0 1440 900" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="playWaveSoft1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ddd6fe" stopOpacity="0.65" />
+              <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0.22" />
+            </linearGradient>
+            <linearGradient id="playWaveSoft2" x1="100%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.52" />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.18" />
+            </linearGradient>
+            <linearGradient id="playStrokeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.55" />
+              <stop offset="50%" stopColor="#7c3aed" stopOpacity="0.75" />
+              <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.35" />
+            </linearGradient>
+          </defs>
+
+          {/* Soft Top-Left Lavender Flowing Wave */}
+          <path d="M-40 -20 L520 -20 C420 120 260 150 180 280 C110 395 160 520 -40 580 Z" fill="url(#playWaveSoft1)" />
+          <path d="M-20 460 C130 430 220 330 290 220 C350 125 460 65 590 -10" stroke="url(#playStrokeGrad)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+          <path d="M-20 510 C150 475 245 365 320 245 C390 135 500 85 630 10" stroke="#a78bfa" strokeWidth="1.75" strokeOpacity="0.4" strokeDasharray="8 8" fill="none" />
+
+          {/* Bottom-Left Flowing Purple Ribbon Wave */}
+          <path d="M-40 660 C160 610 280 730 470 790 C620 835 760 810 920 920 L-40 920 Z" fill="url(#playWaveSoft2)" />
+          <path d="M-20 685 C170 635 285 750 480 805 C610 842 745 830 890 910" stroke="url(#playStrokeGrad)" strokeWidth="3" strokeLinecap="round" fill="none" />
+
+          {/* Bottom-Right Flowing Purple Ribbon Wave */}
+          <path d="M1480 420 C1320 460 1240 590 1210 710 C1180 820 1070 865 920 920 L1480 920 Z" fill="url(#playWaveSoft1)" />
+          <path d="M1480 455 C1330 495 1255 615 1225 735 C1195 840 1095 880 960 920" stroke="url(#playStrokeGrad)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+          <path d="M1480 515 C1355 548 1285 655 1260 765 C1235 855 1150 890 1040 920" stroke="#7c3aed" strokeWidth="1.5" strokeOpacity="0.35" fill="none" />
+
+          {/* Subtle Decorative Dot Matrices */}
+          <g fill="#8b5cf6" fillOpacity="0.32">
+            <circle cx="1335" cy="180" r="3" /><circle cx="1355" cy="180" r="3" /><circle cx="1375" cy="180" r="3" /><circle cx="1395" cy="180" r="3" />
+            <circle cx="1335" cy="200" r="3" /><circle cx="1355" cy="200" r="3" /><circle cx="1375" cy="200" r="3" /><circle cx="1395" cy="200" r="3" />
+            <circle cx="1335" cy="220" r="3" /><circle cx="1355" cy="220" r="3" /><circle cx="1375" cy="220" r="3" /><circle cx="1395" cy="220" r="3" />
+            <circle cx="1335" cy="240" r="3" /><circle cx="1355" cy="240" r="3" /><circle cx="1375" cy="240" r="3" /><circle cx="1395" cy="240" r="3" />
+
+            <circle cx="48" cy="690" r="3" /><circle cx="68" cy="690" r="3" /><circle cx="88" cy="690" r="3" /><circle cx="108" cy="690" r="3" />
+            <circle cx="48" cy="710" r="3" /><circle cx="68" cy="710" r="3" /><circle cx="88" cy="710" r="3" /><circle cx="108" cy="710" r="3" />
+            <circle cx="48" cy="730" r="3" /><circle cx="68" cy="730" r="3" /><circle cx="88" cy="730" r="3" /><circle cx="108" cy="730" r="3" />
+          </g>
+        </svg>
+      </div>
+
+      {/* Side 3D Mascot (Visual Left, pointing toward question) */}
+      <div className="play-mascot-wing" aria-hidden="true">
+        <img src="/images/student-mascot-question.png" alt="" className="play-mascot-img" />
+      </div>
+
+      {/* Side 3D Trophy (Visual Bottom-Right) */}
+      <div className="play-trophy-wing" aria-hidden="true">
+        <img src="/images/teacher-books-trophy.png" alt="" className="play-trophy-img" />
+      </div>
+
       {/* Top Status & Timer Bar */}
       <div className="arena-top-hud">
         <div className="hud-q-counter">
+          <BarChart3 size={17} className="hud-q-icon" />
           <span>السؤال</span>
           <strong>{qNumber}</strong>
           <small>/ {totalQ}</small>
         </div>
 
-        {/* Circular Countdown Timer */}
-        <div className={`countdown-clock ${timerDisplay <= 5 && !isRevealed && !isLeadPeriod ? 'is-urgent' : ''} ${isRevealed ? 'time-finished' : ''} ${isLeadPeriod ? 'is-lead' : ''}`}>
-          <Clock3 size={20} />
-          <span className="clock-number">{isRevealed ? 'تم الكشف' : isTimeUp ? 'انتهى الوقت' : isLeadPeriod ? 'استعد...' : `${timerDisplay}s`}</span>
+        {/* Center Progress-Border Countdown Timer */}
+        <div
+          className={`countdown-clock ${timerDisplay <= 5 && !isRevealed && !isLeadPeriod ? 'is-urgent' : ''} ${isRevealed ? 'time-finished' : ''} ${isLeadPeriod ? 'is-lead' : ''}`}
+          style={(!isRevealed && !isLeadPeriod && timerDisplay > 5)
+            ? { background: `conic-gradient(#6d28d9 ${timerPct}%, rgba(167, 139, 250, 0.28) 0)` }
+            : undefined}
+        >
+          <div className="countdown-clock-inner">
+            <Clock3 size={20} className="hud-clock-icon" />
+            <span className="clock-number">{isRevealed ? 'تم الكشف' : isTimeUp ? 'انتهى الوقت' : isLeadPeriod ? 'استعد...' : `${timerDisplay}s`}</span>
+          </div>
         </div>
 
         <div className="hud-streak-chip">
@@ -4246,131 +4317,147 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         </div>
       </div>
 
-      {/* Main Big Question Box */}
-      <div className="big-question-stage">
-        <div className="bqs-badge">
-          <CircleHelp size={16} /> سؤال التحدي
+      <div className="play-center-stage">
+        {/* Main Big Question Box */}
+        <div className="big-question-stage">
+          <svg className="bqs-comic-sparks" viewBox="0 0 42 42" fill="none" aria-hidden="true">
+            <path d="M8 22 L16 8" stroke="#6d28d9" strokeWidth="4" strokeLinecap="round" />
+            <path d="M18 28 L30 16" stroke="#7c3aed" strokeWidth="4" strokeLinecap="round" />
+            <path d="M22 36 L36 30" stroke="#8b5cf6" strokeWidth="4" strokeLinecap="round" />
+          </svg>
+          <div className="bqs-badge">
+            <Lightbulb size={15} /> سؤال التحدي
+          </div>
+          <h2 className="bqs-title" dir="auto">{question.question_text}</h2>
+          {question.question_text_ar && (
+            <p className="bqs-arabic" dir="rtl">{question.question_text_ar}</p>
+          )}
         </div>
-        <h2 className="bqs-title" dir="auto">{question.question_text}</h2>
-        {question.question_text_ar && (
-          <p className="bqs-arabic" dir="rtl">{question.question_text_ar}</p>
+
+        {/* 4 Giant Kahoot-Style Pastel 3D Pill Answer Buttons */}
+        <div className="kahoot-answers-grid">
+          {question.choices.map((c, i) => {
+            const isSelected = selected === c.id;
+            const isCorrect = isRevealed && effectiveCorrectId === c.id;
+            const isWrong = isRevealed && isSelected && hasVerifiedResult && pendingResult.is_correct === false;
+            const shape = SHAPES[i] || SHAPES[0];
+
+            return (
+              <button
+                key={c.id}
+                className={`kahoot-btn tone-${shape.color} ${isSelected ? 'selected-btn' : ''} ${isCorrect ? 'correct-btn' : ''} ${isWrong ? 'wrong-btn' : ''}`}
+                onClick={() => submitAnswer(c.id)}
+                disabled={selected !== null || timerDisplay <= 0 || isTimeUp || isRevealed || isLeadPeriod}
+              >
+                <div className="shape-disc">{shape.symbol}</div>
+                <div className="kahoot-text-box">
+                  <span className="k-choice-main">{c.choice_text}</span>
+                  {c.choice_text_ar && <small className="k-choice-sub">{c.choice_text_ar}</small>}
+                </div>
+
+                {!isSelected && !isCorrect && (
+                  <Star size={20} fill="currentColor" className="k-btn-star-bg" aria-hidden="true" />
+                )}
+
+                {/* During answering: show simple check that answer was selected */}
+                {isSelected && !isRevealed && (
+                  <CheckCircle2 size={28} className="pick-checkmark" />
+                )}
+                {/* After reveal: show checkmark for correct answer */}
+                {isCorrect && (
+                  <CheckCheck size={30} className="reveal-check-icon" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* State 1: Answer submitted, waiting for time to expire or teacher to reveal */}
+        {selected !== null && !isRevealed && (
+          <div className="answer-locked-banner">
+            <Clock3 size={24} className="spin-bounce" />
+            <div className="alb-text">
+              <strong>تم تأكيد إجابتك بنجاح! 🔒</strong>
+              <p>{isTimeUp ? 'في انتظار قيام المعلم بكشف الإجابة الصحيحة... ⏳' : 'النتيجة والإجابة الصحيحة ستظهر للجميع أول ما الوقت يخلص أو يكشفها المعلم ⏳'}</p>
+            </div>
+          </div>
+        )}
+
+        {/* State 1B: Time expired without selecting, waiting for teacher to reveal (R2.3) */}
+        {selected === null && isTimeUp && !isRevealed && (
+          <div className="answer-locked-banner">
+            <Clock3 size={24} className="spin-bounce" />
+            <div className="alb-text">
+              <strong>انتهى وقت الإجابة لهذا السؤال! ⏰</strong>
+              <p>في انتظار قيام المعلم بكشف الإجابة الصحيحة وتحديث الترتيب... ⏳</p>
+            </div>
+          </div>
+        )}
+
+        {/* State 2: Time up or Teacher revealed -> Show full correction */}
+        {isRevealed && (
+          <div className={`answer-feedback-popup ${
+            hasVerifiedResult
+              ? (pendingResult.is_correct ? 'feedback-correct' : 'feedback-wrong')
+              : (selected !== null ? 'feedback-verifying' : 'feedback-wrong')
+          }`}>
+            <div className="feedback-content">
+              {hasVerifiedResult && pendingResult.is_correct ? (
+                <>
+                  <div className="feedback-icon-bubble">🎉</div>
+                  <div className="feedback-text">
+                    <h3>إجابة صحيحة وعبقرية!</h3>
+                    <p>كسبت <strong>+{pendingResult.points_earned}</strong> نقطة XP ⚡</p>
+                  </div>
+                </>
+              ) : isVerifyingAnswer ? (
+                <>
+                  <div className="feedback-icon-bubble">⏳</div>
+                  <div className="feedback-text">
+                    <h3>جاري التحقق واحتساب النتيجة...</h3>
+                    <p>لحظات ويتم تسجيل نقاطك في لوحة المنافسة ⚡</p>
+                  </div>
+                </>
+              ) : selected !== null ? (
+                <>
+                  <div className="feedback-icon-bubble">💪</div>
+                  <div className="feedback-text">
+                    <h3>إجابة غير صحيحة!</h3>
+                    <p>الإجابة الصحيحة موضحة باللون الأخضر أعلاه. ركّز في السؤال القادم!</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="feedback-icon-bubble">⏰</div>
+                  <div className="feedback-text">
+                    <h3>انتهى الوقت دون اختيار إجابة!</h3>
+                    <p>الإجابة الصحيحة موضحة باللون الأخضر. استعد للسؤال القادم!</p>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="feedback-score-total">
+              مجموع نقاطك: <strong>{(pendingResultRef.current?.total_score ?? pendingResult?.total_score ?? player?.score ?? 0).toLocaleString()} XP</strong>
+            </div>
+          </div>
         )}
       </div>
 
-      {/* 4 Giant Kahoot-Style Answer Buttons */}
-      <div className="kahoot-answers-grid">
-        {question.choices.map((c, i) => {
-          const isSelected = selected === c.id;
-          const isCorrect = isRevealed && effectiveCorrectId === c.id;
-          const isWrong = isRevealed && isSelected && hasVerifiedResult && pendingResult.is_correct === false;
-          const shape = SHAPES[i] || SHAPES[0];
-
-          return (
-            <button
-              key={c.id}
-              className={`kahoot-btn tone-${shape.color} ${isSelected ? 'selected-btn' : ''} ${isCorrect ? 'correct-btn' : ''} ${isWrong ? 'wrong-btn' : ''}`}
-              onClick={() => submitAnswer(c.id)}
-              disabled={selected !== null || timerDisplay <= 0 || isTimeUp || isRevealed || isLeadPeriod}
-            >
-              <div className="shape-disc">{shape.symbol}</div>
-              <div className="kahoot-text-box">
-                <span className="k-choice-main">{c.choice_text}</span>
-                {c.choice_text_ar && <small className="k-choice-sub">{c.choice_text_ar}</small>}
-              </div>
-
-              {/* During answering: show simple check that answer was selected */}
-              {isSelected && !isRevealed && (
-                <CheckCircle2 size={28} className="pick-checkmark" />
-              )}
-              {/* After reveal: show checkmark for correct answer */}
-              {isCorrect && (
-                <CheckCheck size={32} className="reveal-check-icon" />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* State 1: Answer submitted, waiting for time to expire or teacher to reveal */}
-      {selected !== null && !isRevealed && (
-        <div className="answer-locked-banner">
-          <Clock3 size={24} className="spin-bounce" />
-          <div className="alb-text">
-            <strong>تم تأكيد إجابتك بنجاح! 🔒</strong>
-            <p>{isTimeUp ? 'في انتظار قيام المعلم بكشف الإجابة الصحيحة... ⏳' : 'النتيجة والإجابة الصحيحة ستظهر للجميع أول ما الوقت يخلص أو يكشفها المعلم ⏳'}</p>
-          </div>
-        </div>
-      )}
-
-      {/* State 1B: Time expired without selecting, waiting for teacher to reveal (R2.3) */}
-      {selected === null && isTimeUp && !isRevealed && (
-        <div className="answer-locked-banner">
-          <Clock3 size={24} className="spin-bounce" />
-          <div className="alb-text">
-            <strong>انتهى وقت الإجابة لهذا السؤال! ⏰</strong>
-            <p>في انتظار قيام المعلم بكشف الإجابة الصحيحة وتحديث الترتيب... ⏳</p>
-          </div>
-        </div>
-      )}
-
-      {/* State 2: Time up or Teacher revealed -> Show full correction */}
-      {isRevealed && (
-        <div className={`answer-feedback-popup ${
-          hasVerifiedResult
-            ? (pendingResult.is_correct ? 'feedback-correct' : 'feedback-wrong')
-            : (selected !== null ? 'feedback-verifying' : 'feedback-wrong')
-        }`}>
-          <div className="feedback-content">
-            {hasVerifiedResult && pendingResult.is_correct ? (
-              <>
-                <div className="feedback-icon-bubble">🎉</div>
-                <div className="feedback-text">
-                  <h3>إجابة صحيحة وعبقرية!</h3>
-                  <p>كسبت <strong>+{pendingResult.points_earned}</strong> نقطة XP ⚡</p>
-                </div>
-              </>
-            ) : isVerifyingAnswer ? (
-              <>
-                <div className="feedback-icon-bubble">⏳</div>
-                <div className="feedback-text">
-                  <h3>جاري التحقق واحتساب النتيجة...</h3>
-                  <p>لحظات ويتم تسجيل نقاطك في لوحة المنافسة ⚡</p>
-                </div>
-              </>
-            ) : selected !== null ? (
-              <>
-                <div className="feedback-icon-bubble">💪</div>
-                <div className="feedback-text">
-                  <h3>إجابة غير صحيحة!</h3>
-                  <p>الإجابة الصحيحة موضحة باللون الأخضر أعلاه. ركّز في السؤال القادم!</p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="feedback-icon-bubble">⏰</div>
-                <div className="feedback-text">
-                  <h3>انتهى الوقت دون اختيار إجابة!</h3>
-                  <p>الإجابة الصحيحة موضحة باللون الأخضر. استعد للسؤال القادم!</p>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="feedback-score-total">
-            مجموع نقاطك: <strong>{(pendingResultRef.current?.total_score ?? pendingResult?.total_score ?? player?.score ?? 0).toLocaleString()} XP</strong>
-          </div>
-        </div>
-      )}
-
-      {/* Bottom Floating Player Bar */}
+      {/* Bottom Floating Player Bar (Split Corner Capsules) */}
       <div className="bottom-student-bar">
-        <div className="bsb-avatar"><AvatarDisplay avatarId={player.avatar} /></div>
-        <div className="bsb-info">
-          <strong>{player.name}</strong>
-          <span>{getAvatar(player.avatar).name}</span>
+        <div className="bsb-player-pill">
+          <div className="bsb-avatar"><AvatarDisplay avatarId={player.avatar} /></div>
+          <div className="bsb-info">
+            <strong>{player.name}</strong>
+            <span>{getAvatar(player.avatar).name}</span>
+          </div>
         </div>
         <div className="bsb-xp">
-          <Zap size={16} fill="currentColor" />
-          <strong>{(pendingResultRef.current?.total_score ?? pendingResult?.total_score ?? player?.score ?? 0).toLocaleString()} XP</strong>
+          <span className="bsb-xp-star-badge" aria-hidden="true">
+            <Star size={14} fill="currentColor" />
+          </span>
+          <strong>XP {(pendingResultRef.current?.total_score ?? pendingResult?.total_score ?? player?.score ?? 0).toLocaleString()}</strong>
+          <Zap size={16} fill="currentColor" className="bsb-xp-bolt" />
         </div>
       </div>
     </main>

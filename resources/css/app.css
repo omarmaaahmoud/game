@@ -5007,13 +5007,17 @@ html, body {
     bottom: 8px !important;
     z-index: 50 !important;
     margin-top: 14px !important;
-    padding: 10px 14px !important;
-    border-radius: 18px !important;
-    background: rgba(15, 10, 35, 0.88) !important;
-    backdrop-filter: blur(20px) !important;
-    -webkit-backdrop-filter: blur(20px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.22) !important;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6) !important;
+    padding: 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .play-theme-purple .bsb-player-pill,
+  .play-theme-purple .bsb-xp {
+    padding: 7px 12px !important;
+    font-size: 12px !important;
   }
   .bsb-avatar {
     font-size: 24px !important;
@@ -8110,5 +8114,525 @@ html, body {
     padding: 7px 10px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   STUDENT PLAY ARENA — PURPLE WAVE & 3D MASCOT REDESIGN
+   ══════════════════════════════════════════════════════════════════ */
+.play-arena-container.play-theme-purple {
+  position: relative;
+  max-width: 1180px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 8px 16px 24px;
+  min-height: calc(100vh - 108px);
+  display: flex;
+  flex-direction: column;
+}
+
+.play-purple-scene-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 15% 22%, rgba(221, 214, 254, 0.72) 0%, transparent 45%),
+    radial-gradient(circle at 86% 78%, rgba(216, 180, 254, 0.56) 0%, transparent 46%),
+    linear-gradient(180deg, #f3f0ff 0%, #faf9ff 48%, #efeaff 100%);
+}
+
+.play-purple-waves-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.play-mascot-wing {
+  position: fixed;
+  left: max(8px, calc(50% - 625px));
+  bottom: 92px;
+  width: clamp(210px, 21vw, 310px);
+  z-index: 1;
+  pointer-events: none;
+  animation: floatPlayMascot 4.6s ease-in-out infinite;
+}
+
+.play-mascot-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 18px 28px rgba(91, 33, 182, 0.22));
+}
+
+.play-trophy-wing {
+  position: fixed;
+  right: max(12px, calc(50% - 615px));
+  bottom: 94px;
+  width: clamp(145px, 14vw, 200px);
+  z-index: 1;
+  pointer-events: none;
+  animation: floatPlayMascot 5.4s ease-in-out infinite reverse;
+}
+
+.play-trophy-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(0 16px 24px rgba(109, 40, 217, 0.18));
+}
+
+@keyframes floatPlayMascot {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-9px); }
+}
+
+.play-theme-purple .arena-top-hud {
+  position: relative;
+  z-index: 2;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.play-theme-purple .hud-q-counter,
+.play-theme-purple .hud-streak-chip {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1.5px solid rgba(139, 92, 246, 0.24);
+  border-radius: 999px;
+  padding: 9px 20px;
+  color: #1e1b4b;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(109, 40, 217, 0.08);
+}
+
+.play-theme-purple .hud-q-icon {
+  color: #6d28d9;
+}
+
+.play-theme-purple .hud-q-counter strong {
+  color: #5b21b6;
+}
+
+.play-theme-purple .hud-streak-chip .flame-icon {
+  color: #f97316;
+}
+
+.play-theme-purple .countdown-clock {
+  padding: 3.5px;
+  border-radius: 999px;
+  border: none;
+  background: conic-gradient(#6d28d9 calc(var(--timer-pct, 100) * 1%), rgba(167, 139, 250, 0.28) 0);
+  box-shadow: 0 10px 26px rgba(109, 40, 217, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-theme-purple .countdown-clock-inner {
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 8px 26px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.play-theme-purple .hud-clock-icon {
+  color: #6d28d9;
+}
+
+.play-theme-purple .clock-number {
+  font-size: 23px;
+  font-weight: 900;
+  color: #5b21b6;
+}
+
+.play-theme-purple .countdown-clock.is-urgent {
+  background: #ef4444;
+  box-shadow: 0 8px 26px rgba(239, 68, 68, 0.42);
+}
+
+.play-theme-purple .countdown-clock.is-urgent .countdown-clock-inner {
+  background: #ef4444;
+}
+
+.play-theme-purple .countdown-clock.is-urgent .hud-clock-icon,
+.play-theme-purple .countdown-clock.is-urgent .clock-number {
+  color: #ffffff;
+}
+
+.play-theme-purple .countdown-clock.time-finished {
+  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  box-shadow: 0 8px 22px rgba(109, 40, 217, 0.25);
+}
+
+.play-theme-purple .countdown-clock.time-finished .countdown-clock-inner {
+  background: #ffffff;
+}
+
+.play-theme-purple .countdown-clock.time-finished .clock-number {
+  font-size: 16px;
+  color: #5b21b6;
+}
+
+.play-center-stage {
+  position: relative;
+  z-index: 2;
+  max-width: 720px;
+  width: 100%;
+  margin: 8px auto 0;
+  flex: 1;
+}
+
+.play-theme-purple .big-question-stage {
+  position: relative;
+  background: #ffffff;
+  border-radius: 28px;
+  padding: 40px 32px 28px;
+  margin-bottom: 24px;
+  border: 1.5px solid rgba(139, 92, 246, 0.22);
+  box-shadow: 0 20px 48px rgba(91, 33, 182, 0.1), 0 4px 12px rgba(91, 33, 182, 0.05);
+  text-align: center;
+}
+
+.bqs-comic-sparks {
+  position: absolute;
+  top: -18px;
+  left: -14px;
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.play-theme-purple .bqs-badge {
+  position: absolute;
+  top: -19px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+  color: #ffffff;
+  border: 2.5px solid #ffffff;
+  padding: 7px 22px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 8px 20px rgba(109, 40, 217, 0.34);
+  white-space: nowrap;
+}
+
+.play-theme-purple .bqs-title {
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 900;
+  color: #1e1b4b;
+  margin: 4px 0 14px;
+  line-height: 1.35;
+}
+
+.play-theme-purple .bqs-arabic {
+  display: inline-block;
+  background: rgba(139, 92, 246, 0.13);
+  color: #5b21b6;
+  padding: 6px 22px;
+  border-radius: 999px;
+  font-size: clamp(16px, 2vw, 20px);
+  font-weight: 800;
+  margin: 0;
+}
+
+.play-theme-purple .kahoot-answers-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.play-theme-purple .kahoot-btn {
+  border-radius: 999px;
+  padding: 14px 20px;
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #1e1b4b;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, filter 0.18s ease;
+}
+
+.play-theme-purple .kahoot-btn:hover:not(:disabled) {
+  transform: translateY(-3px) scale(1.015);
+  filter: brightness(1.03);
+}
+
+.play-theme-purple .kahoot-btn:active:not(:disabled) {
+  transform: translateY(2px) scale(0.985);
+}
+
+.play-theme-purple .shape-disc {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  font-weight: 900;
+  color: #ffffff;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 12px rgba(30, 27, 75, 0.18);
+  text-shadow: none;
+}
+
+.play-theme-purple .k-choice-main {
+  color: #1e1b4b;
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.play-theme-purple .k-choice-sub {
+  color: #334155;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.k-btn-star-bg {
+  opacity: 0.24;
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.play-theme-purple .kahoot-btn.tone-red {
+  background: linear-gradient(180deg, #ffe4ef 0%, #fbcfe8 58%, #f9a8d4 100%);
+  box-shadow: 0 5px 0 #f472b6, 0 12px 24px rgba(236, 72, 153, 0.16), inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}
+.play-theme-purple .kahoot-btn.tone-red .shape-disc {
+  background: linear-gradient(135deg, #f43f5e, #e11d48);
+}
+.play-theme-purple .kahoot-btn.tone-red .k-btn-star-bg {
+  color: #ec4899;
+}
+
+.play-theme-purple .kahoot-btn.tone-blue {
+  background: linear-gradient(180deg, #e0f2fe 0%, #bfdbfe 58%, #93c5fd 100%);
+  box-shadow: 0 5px 0 #60a5fa, 0 12px 24px rgba(59, 130, 246, 0.16), inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}
+.play-theme-purple .kahoot-btn.tone-blue .shape-disc {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+}
+.play-theme-purple .kahoot-btn.tone-blue .k-btn-star-bg {
+  color: #3b82f6;
+}
+
+.play-theme-purple .kahoot-btn.tone-orange {
+  background: linear-gradient(180deg, #fef9c3 0%, #fde68a 58%, #fcd34d 100%);
+  box-shadow: 0 5px 0 #f59e0b, 0 12px 24px rgba(245, 158, 11, 0.16), inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}
+.play-theme-purple .kahoot-btn.tone-orange .shape-disc {
+  background: linear-gradient(135deg, #fb923c, #ea580c);
+}
+.play-theme-purple .kahoot-btn.tone-orange .k-btn-star-bg {
+  color: #f59e0b;
+}
+
+.play-theme-purple .kahoot-btn.tone-green {
+  background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 58%, #86efac 100%);
+  box-shadow: 0 5px 0 #34d399, 0 12px 24px rgba(16, 185, 129, 0.16), inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}
+.play-theme-purple .kahoot-btn.tone-green .shape-disc {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+.play-theme-purple .kahoot-btn.tone-green .k-btn-star-bg {
+  color: #10b981;
+}
+
+.play-theme-purple .kahoot-btn.selected-btn {
+  border: 3px solid #6d28d9 !important;
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.25), 0 12px 28px rgba(109, 40, 217, 0.24) !important;
+  transform: scale(1.02);
+  filter: none;
+}
+
+.play-theme-purple .pick-checkmark {
+  color: #5b21b6;
+  filter: none;
+  margin-inline-start: auto;
+}
+
+.play-theme-purple .kahoot-btn.correct-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border: 3px solid #C3F53C !important;
+  box-shadow: 0 6px 0 #047857, 0 14px 32px rgba(16, 185, 129, 0.36) !important;
+  color: #ffffff !important;
+}
+
+.play-theme-purple .kahoot-btn.correct-btn .k-choice-main,
+.play-theme-purple .kahoot-btn.correct-btn .k-choice-sub {
+  color: #ffffff !important;
+}
+
+.play-theme-purple .kahoot-btn.correct-btn .reveal-check-icon {
+  margin-inline-start: auto;
+}
+
+.play-theme-purple .kahoot-btn.wrong-btn {
+  background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%) !important;
+  border: 2px solid #fca5a5 !important;
+  opacity: 0.78 !important;
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.play-theme-purple .kahoot-btn.wrong-btn .k-choice-main,
+.play-theme-purple .kahoot-btn.wrong-btn .k-choice-sub {
+  color: #991b1b !important;
+}
+
+.play-theme-purple .answer-locked-banner {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px solid rgba(124, 58, 237, 0.28);
+  box-shadow: 0 12px 28px rgba(91, 33, 182, 0.1);
+  color: #1e1b4b;
+}
+
+.play-theme-purple .answer-locked-banner .alb-text strong {
+  color: #5b21b6;
+}
+
+.play-theme-purple .answer-locked-banner .alb-text p {
+  color: #475569;
+}
+
+.play-theme-purple .bottom-student-bar {
+  position: relative;
+  z-index: 2;
+  max-width: 1120px;
+  width: 100%;
+  margin: auto auto 0;
+  padding: 14px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+}
+
+.play-theme-purple .bsb-player-pill,
+.play-theme-purple .bsb-xp {
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid rgba(139, 92, 246, 0.22);
+  border-radius: 999px;
+  padding: 8px 18px;
+  box-shadow: 0 8px 24px rgba(91, 33, 182, 0.12);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.play-theme-purple .bsb-info strong {
+  color: #1e1b4b;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.play-theme-purple .bsb-info span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.play-theme-purple .bsb-xp {
+  color: #4c1d95;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.bsb-xp-star-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.bsb-xp-bolt {
+  color: #f59e0b;
+}
+
+@media (max-width: 1140px) {
+  .play-mascot-wing,
+  .play-trophy-wing {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .play-arena-container.play-theme-purple {
+    padding: 4px 6px 14px;
+    min-height: calc(100vh - 86px);
+  }
+  .play-theme-purple .arena-top-hud {
+    margin-bottom: 18px;
+    gap: 6px;
+  }
+  .play-theme-purple .hud-q-counter,
+  .play-theme-purple .hud-streak-chip {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .play-theme-purple .countdown-clock-inner {
+    padding: 6px 16px;
+  }
+  .play-theme-purple .clock-number {
+    font-size: 17px;
+  }
+  .play-theme-purple .big-question-stage {
+    padding: 32px 16px 20px;
+    border-radius: 22px;
+    margin-bottom: 16px;
+  }
+  .bqs-comic-sparks {
+    display: none;
+  }
+  .play-theme-purple .bqs-badge {
+    font-size: 12px;
+    padding: 5px 16px;
+    top: -15px;
+  }
+  .play-theme-purple .kahoot-answers-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .play-theme-purple .kahoot-btn {
+    min-height: 62px;
+    padding: 12px 16px;
+  }
+  .play-theme-purple .shape-disc {
+    width: 38px;
+    height: 38px;
+    font-size: 16px;
+  }
+  .play-theme-purple .k-choice-main {
+    font-size: 16.5px;
+  }
+}
+
 
 
