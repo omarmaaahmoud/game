@@ -8808,22 +8808,53 @@ html, body {
 
 /* Student wait card inside wide lobby */
 .lobby-theme-purple .wait-portal-card-space {
-  max-width: 580px;
-  padding: 28px 28px 24px;
+  max-width: 680px;
+  padding: 20px 28px;
   cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  text-align: right;
 }
 
 .lobby-theme-purple .wait-portal-card-space:hover {
   transform: none;
 }
 
+.lobby-theme-purple .wait-avatar-ring {
+  width: 92px;
+  height: 92px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.lobby-theme-purple .floating-avatar-giant-3d {
+  width: 68px;
+  height: 68px;
+}
+
+.lobby-theme-purple .floating-avatar-giant {
+  font-size: 52px;
+}
+
+.lobby-theme-purple .wait-portal-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 .lobby-theme-purple .wait-title-space {
   color: #1e1b4b;
+  font-size: 24px;
+  margin-bottom: 0;
 }
 
 .lobby-theme-purple .wait-msg-sub-space {
   color: #5b4d7e;
   font-weight: 700;
+  margin-bottom: 4px;
 }
 
 .lobby-theme-purple .wait-character-chip-space {
@@ -8961,6 +8992,18 @@ html, body {
 @media (max-width: 768px) {
   .space-lobby-view.lobby-theme-purple {
     padding: 10px 10px 32px !important;
+  }
+  .lobby-theme-purple .wait-portal-card-space {
+    flex-direction: column;
+    text-align: center;
+    padding: 18px 16px;
+    gap: 12px;
+  }
+  .lobby-theme-purple .wait-portal-info {
+    align-items: center;
+  }
+  .lobby-theme-purple .wait-title-space {
+    font-size: 20px;
   }
   .lobby-theme-purple .spgc-num-row {
     font-size: 40px !important;

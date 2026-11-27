@@ -3031,11 +3031,13 @@ function StudentLobby({ session, setMode, player }) {
           <div className="ring-pulse rp-1" />
           <div className="ring-pulse rp-2" />
         </div>
-        <h1 className="wait-title-space">أنت في اللعبة يا {player.name}! 🚀</h1>
-        <p className="wait-msg-sub-space">نحن الآن في غرفة الانتظار بانتظار إشارة البدء من المعلم...</p>
-        <div className="wait-character-chip-space">
-          <span>شخصيتك:</span>
-          <strong>{getAvatar(player.avatar).name}</strong>
+        <div className="wait-portal-info">
+          <h1 className="wait-title-space">أنت في اللعبة يا {player.name}! 🚀</h1>
+          <p className="wait-msg-sub-space">نحن الآن في غرفة الانتظار بانتظار إشارة البدء من المعلم...</p>
+          <div className="wait-character-chip-space">
+            <span>شخصيتك:</span>
+            <strong>{getAvatar(player.avatar).name}</strong>
+          </div>
         </div>
       </div>
 
