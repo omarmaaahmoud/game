@@ -2036,72 +2036,10 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
   }
 
   return (
-    <main className="space-lobby-view">
-      <CosmicDecorations />
+    <main className="space-lobby-view lobby-theme-purple">
+      <PurpleWaveScene />
 
-      {/* Top Glass Bar (Matching iOS / visionOS Screenshot) */}
-      <div className="space-top-bar">
-        {/* Left: Brand Squircle */}
-        <div className="glass-brand-badge">
-          <div className="gbb-icon-disc">
-            <GraduationCap size={22} className="gbb-cap" />
-          </div>
-          <div className="gbb-text">
-            <strong className="gbb-title">Tecorbi</strong>
-            <span className="gbb-sub">Kids Arena •</span>
-          </div>
-        </div>
-
-        {/* Center: Live Quiz Squircle */}
-        <div className="glass-quiz-badge">
-          <span>المسابقات المدرسية</span>
-          <span>- المباشرة</span>
-          <strong>Live Quiz</strong>
-        </div>
-
-        {/* Right: Golden PIN Badge */}
-        <div className="glass-pin-badge" onClick={copyPin} title="اضغط لنسخ الكود">
-          <div className="gpb-star">
-            <Star size={13} fill="#fbbf24" color="#fbbf24" />
-          </div>
-          <span className="gpb-label">PIN {session.pin}</span>
-        </div>
-      </div>
-
-      {/* Live Status Pill */}
-      <div className="space-live-pill-row">
-        <div className="space-live-pill">
-          <span className="live-dot-green" />
-          <Radio size={14} className="live-radio-wave" />
-          <span>غرفة الانتظار المباشرة</span>
-        </div>
-      </div>
-
-      {/* Hero Section: 3D Planet + Arabic Headline + 3D Rocket */}
-      <div className="space-hero-section">
-        {/* Left 3D Planet */}
-        <div className="space-planet-anchor">
-          <SpacePlanet3D />
-        </div>
-
-        {/* Center Arabic Title & Teacher */}
-        <div className="space-hero-content">
-          <h1 className="space-hero-title">
-            <span>Tecorbi</span>
-            <span>Game 🎮</span>
-          </h1>
-          <p className="space-hero-teacher">
-            بقيادة المعلم: <strong>{session.teacher_name || 'الأستاذ أحمد'}</strong>
-          </p>
-        </div>
-
-        {/* Right 3D Rocket */}
-        <div className="space-rocket-anchor">
-          <SpaceRocket3D />
-        </div>
-      </div>
-
-      {/* Game PIN Central Glass Card (Realistic iOS Glassmorphism) */}
+      {/* Game PIN Central Card */}
       <div className="space-pin-glass-card" onClick={copyPin} title="اضغط هنا لنسخ الكود">
         <div className="spgc-header">
           <div className="spgc-gamepad-disc">
@@ -2110,9 +2048,8 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
           <span className="spgc-title">(GAME PIN) كود الانضمام للطلاب</span>
         </div>
 
-        <div className="spgc-numbers-display">
-          <div className="spgc-num-row">{session.pin.slice(0, 3)} -</div>
-          <div className="spgc-num-row">{session.pin.slice(3)}</div>
+        <div className="spgc-numbers-display" dir="ltr">
+          <div className="spgc-num-row">{session.pin}</div>
         </div>
 
         <div className="spgc-copy-action">
@@ -2121,18 +2058,6 @@ function TeacherLobby({ session, setSession, setMode, setNotice, copyMobileLink 
           </div>
           <span className="spgc-copy-hint">اضغط هنا لنسخ الكود ومشاركته مع الفصل</span>
         </div>
-      </div>
-
-      {/* Mobile Direct URL Strip for Classroom Projection */}
-      <div className="space-mobile-url-strip" onClick={copyMobileLink}>
-        <Smartphone size={20} className="smus-icon" />
-        <div className="smus-text">
-          <span>ادخلوا من الموبايل على الرابط التالي:</span>
-          <strong>{getMobileUrl()}</strong>
-        </div>
-        <button className="btn-copy-chip-glass" type="button">
-          <Copy size={14} /> نسخ الرابط
-        </button>
       </div>
 
       {/* Connected Players Grid */}
@@ -3088,8 +3013,8 @@ function StudentLobby({ session, setMode, player }) {
   }, [session?.pin, setMode, pollPlayers]);
 
   return (
-    <main className="space-lobby-view student-waiting-arena-space">
-      <CosmicDecorations />
+    <main className="space-lobby-view student-waiting-arena-space lobby-theme-purple">
+      <PurpleWaveScene />
       <div className="space-pin-glass-card wait-portal-card-space">
         <div className="wait-avatar-ring">
           {getAvatar(player.avatar).image ? (
@@ -3115,10 +3040,10 @@ function StudentLobby({ session, setMode, player }) {
       </div>
 
       {/* Connected Players in Lobby */}
-      <div className="space-players-section" style={{ maxWidth: '800px', margin: '20px auto 0', width: '100%' }}>
+      <div className="space-players-section">
         <div className="sps-header">
           <div className="sps-title">
-            <Users size={20} />
+            <Users size={22} />
             <h2>الطلاب المنضمون للغرفة</h2>
           </div>
           <span className="sps-counter-chip">{players.length > 0 ? players.length : 1} أبطال جاهزون ⚡</span>
@@ -3141,7 +3066,7 @@ function StudentLobby({ session, setMode, player }) {
                 <div key={p.id} className={`space-player-bubble ${isMe ? 'is-me-bubble' : ''}`}>
                   <span className="spb-emoji"><AvatarDisplay avatarId={p.avatar} /></span>
                   <span className="spb-name">
-                    {p.name} {isMe && <span style={{ color: '#3925DE', fontSize: '0.85em', display: 'block', fontWeight: '900' }}>⭐ (أنت)</span>}
+                    {p.name} {isMe && <span className="spb-me-tag">⭐ (أنت)</span>}
                   </span>
                 </div>
               );
@@ -3150,7 +3075,7 @@ function StudentLobby({ session, setMode, player }) {
         )}
       </div>
 
-      <div className="tips-banner-space" style={{ maxWidth: '600px', margin: '16px auto 0' }}>
+      <div className="tips-banner-space">
         <Sparkles size={18} /> نصيحة: الإجابة الأسرع تمنحك نقاط XP إضافية وبونص سرعة!
       </div>
     </main>

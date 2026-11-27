@@ -1229,13 +1229,25 @@ input:focus {
 /* ── Immediate Feedback Modal ── */
 .answer-feedback-popup {
   border-radius: var(--radius-xl);
-  padding: 24px 32px;
+  padding: 22px 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
-  animation: slideUp 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
+  animation: feedbackGentleIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+@keyframes feedbackGentleIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .feedback-correct {
@@ -8723,6 +8735,261 @@ html, body {
 .teacher-theme-purple .btn-next-giant:hover:not(:disabled) {
   box-shadow: 0 8px 0 #5b21b6, 0 16px 30px rgba(109, 40, 217, 0.42) !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   LOBBY PURPLE THEME (Wide Desktop Player Showcase & Single-Line PIN)
+   ══════════════════════════════════════════════════════════════════ */
+.space-lobby-view.lobby-theme-purple {
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 16px 24px 48px;
+  position: relative;
+  z-index: 10;
+}
+
+.lobby-theme-purple .space-pin-glass-card,
+.lobby-theme-purple .space-players-section,
+.lobby-theme-purple .space-lobby-footer-actions,
+.lobby-theme-purple .tips-banner-space {
+  position: relative;
+  z-index: 2;
+}
+
+.lobby-theme-purple .space-pin-glass-card {
+  max-width: 560px;
+  margin: 0 auto 28px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 2px solid rgba(139, 92, 246, 0.28);
+  border-radius: 30px;
+  padding: 24px 28px 22px;
+  box-shadow: 0 20px 48px rgba(91, 33, 182, 0.12);
+}
+
+.lobby-theme-purple .space-pin-glass-card:hover {
+  border-color: #7c3aed;
+  box-shadow: 0 24px 56px rgba(109, 40, 217, 0.18);
+}
+
+.lobby-theme-purple .spgc-gamepad-disc {
+  background: #f5f3ff;
+  border-color: rgba(139, 92, 246, 0.28);
+  color: #6d28d9;
+}
+
+.lobby-theme-purple .spgc-numbers-display {
+  flex-direction: row;
+  padding: 8px 0 14px;
+}
+
+.lobby-theme-purple .spgc-num-row {
+  color: #6d28d9;
+  font-size: clamp(46px, 5.5vw, 68px);
+  letter-spacing: 10px;
+  white-space: nowrap;
+  line-height: 1.05;
+  padding-inline-start: 10px;
+}
+
+.lobby-theme-purple .spgc-copy-action {
+  background: #f5f3ff;
+  border-color: rgba(139, 92, 246, 0.24);
+}
+
+.lobby-theme-purple .spgc-copy-action:hover {
+  background: #ede9fe;
+  border-color: #7c3aed;
+}
+
+.lobby-theme-purple .spgc-copy-btn,
+.lobby-theme-purple .spgc-copy-hint {
+  color: #6d28d9;
+}
+
+/* Student wait card inside wide lobby */
+.lobby-theme-purple .wait-portal-card-space {
+  max-width: 580px;
+  padding: 28px 28px 24px;
+  cursor: default;
+}
+
+.lobby-theme-purple .wait-portal-card-space:hover {
+  transform: none;
+}
+
+.lobby-theme-purple .wait-title-space {
+  color: #1e1b4b;
+}
+
+.lobby-theme-purple .wait-msg-sub-space {
+  color: #5b4d7e;
+  font-weight: 700;
+}
+
+.lobby-theme-purple .wait-character-chip-space {
+  background: #f5f3ff;
+  border: 1.5px solid rgba(139, 92, 246, 0.28);
+  color: #5b21b6;
+  margin-bottom: 0;
+}
+
+/* Wide Connected Players Section (Teacher & Student Lobbies) */
+.lobby-theme-purple .space-players-section {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.95) !important;
+  border: 2px solid rgba(139, 92, 246, 0.24) !important;
+  border-radius: 30px;
+  padding: 28px 32px;
+  margin-bottom: 26px;
+  box-shadow: 0 20px 50px rgba(91, 33, 182, 0.1) !important;
+}
+
+.lobby-theme-purple .sps-header {
+  margin-bottom: 22px;
+  padding-bottom: 14px;
+  border-bottom: 1.5px solid rgba(139, 92, 246, 0.14);
+}
+
+.lobby-theme-purple .sps-title {
+  gap: 10px;
+  color: #6d28d9;
+}
+
+.lobby-theme-purple .sps-title h2 {
+  font-size: 22px;
+  font-weight: 900;
+  color: #1e1b4b !important;
+}
+
+.lobby-theme-purple .sps-counter-chip {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border: none;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 6px 18px;
+  border-radius: 999px;
+  box-shadow: 0 6px 16px rgba(109, 40, 217, 0.22);
+}
+
+.lobby-theme-purple .space-players-empty {
+  padding: 36px 16px;
+}
+
+.lobby-theme-purple .space-players-empty h3 {
+  font-size: 20px;
+}
+
+.lobby-theme-purple .space-players-empty strong {
+  color: #6d28d9;
+}
+
+.lobby-theme-purple .space-players-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+}
+
+.lobby-theme-purple .space-player-bubble {
+  flex: 0 1 195px;
+  min-width: 170px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f4ff 100%) !important;
+  border: 2px solid rgba(139, 92, 246, 0.22) !important;
+  border-radius: 22px;
+  padding: 20px 16px;
+  gap: 10px;
+  box-shadow: 0 8px 22px rgba(91, 33, 182, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.lobby-theme-purple .space-player-bubble:hover {
+  transform: translateY(-3px);
+  border-color: rgba(124, 58, 237, 0.45) !important;
+  box-shadow: 0 14px 28px rgba(109, 40, 217, 0.14);
+}
+
+.lobby-theme-purple .space-player-bubble.is-me-bubble {
+  border: 2.5px solid #7c3aed !important;
+  background: linear-gradient(180deg, #faf7ff 0%, #ede9fe 100%) !important;
+  box-shadow: 0 10px 26px rgba(124, 58, 237, 0.2) !important;
+}
+
+.lobby-theme-purple .spb-emoji {
+  font-size: 46px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lobby-theme-purple .spb-name {
+  font-size: 18px;
+  font-weight: 900;
+  color: #1e1b4b !important;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.spb-me-tag {
+  color: #6d28d9;
+  font-size: 13px;
+  display: block;
+  font-weight: 900;
+  margin-top: 2px;
+}
+
+.lobby-theme-purple .space-lobby-footer-actions {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.lobby-theme-purple .tips-banner-space {
+  max-width: 680px;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1.5px solid rgba(139, 92, 246, 0.26);
+  color: #5b21b6;
+  border-radius: 18px;
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 800;
+  justify-content: center;
+  box-shadow: 0 10px 24px rgba(91, 33, 182, 0.08);
+}
+
+@media (max-width: 768px) {
+  .space-lobby-view.lobby-theme-purple {
+    padding: 10px 10px 32px !important;
+  }
+  .lobby-theme-purple .spgc-num-row {
+    font-size: 40px !important;
+    letter-spacing: 6px;
+    padding-inline-start: 6px;
+  }
+  .lobby-theme-purple .space-players-section {
+    padding: 18px 14px;
+    border-radius: 22px;
+  }
+  .lobby-theme-purple .sps-title h2 {
+    font-size: 17px;
+  }
+  .lobby-theme-purple .space-players-grid {
+    gap: 10px;
+  }
+  .lobby-theme-purple .space-player-bubble {
+    flex: 1 1 135px;
+    min-width: 130px;
+    padding: 14px 10px;
+  }
+  .lobby-theme-purple .spb-emoji {
+    font-size: 34px;
+  }
+  .lobby-theme-purple .spb-name {
+    font-size: 15px;
+  }
+}
+
 
 
 
