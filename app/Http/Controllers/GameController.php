@@ -207,10 +207,20 @@ class GameController extends Controller
                     : null;
 
                 if ($revealData !== null) {
+                    $freshInTx = $player->fresh();
                     $autoRevealPayload = [
                         'question_state' => 'revealed',
                         'state_version' => $revealData['state_version'],
                         'all_answered' => true,
+                        'my_result' => [
+                            'answered' => true,
+                            'is_correct' => $isCorrect,
+                            'points_earned' => $points,
+                            'total_score' => (int) ($freshInTx ? $freshInTx->score : $player->score),
+                            'streak' => (int) ($freshInTx ? $freshInTx->streak : $player->streak),
+                            'choice_id' => $choice->id,
+                            'correct_choice_id' => $revealData['correct_choice_id'],
+                        ],
                     ];
                 }
 

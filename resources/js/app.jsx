@@ -692,6 +692,53 @@ function CosmicDecorations() {
   );
 }
 
+/* ── Shared Soft Lavender Wave & Purple Accent Line Scene (StudentPlay & TeacherLive) ── */
+function PurpleWaveScene() {
+  return (
+    <div className="play-purple-scene-bg" aria-hidden="true">
+      <svg className="play-purple-waves-svg" viewBox="0 0 1440 900" preserveAspectRatio="none" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="playWaveSoft1" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#ddd6fe" stopOpacity="0.65" />
+            <stop offset="100%" stopColor="#c4b5fd" stopOpacity="0.22" />
+          </linearGradient>
+          <linearGradient id="playWaveSoft2" x1="100%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor="#c4b5fd" stopOpacity="0.52" />
+            <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.18" />
+          </linearGradient>
+          <linearGradient id="playStrokeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.55" />
+            <stop offset="50%" stopColor="#7c3aed" stopOpacity="0.75" />
+            <stop offset="100%" stopColor="#a78bfa" stopOpacity="0.35" />
+          </linearGradient>
+        </defs>
+
+        <path d="M-40 -20 L520 -20 C420 120 260 150 180 280 C110 395 160 520 -40 580 Z" fill="url(#playWaveSoft1)" />
+        <path d="M-20 460 C130 430 220 330 290 220 C350 125 460 65 590 -10" stroke="url(#playStrokeGrad)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+        <path d="M-20 510 C150 475 245 365 320 245 C390 135 500 85 630 10" stroke="#a78bfa" strokeWidth="1.75" strokeOpacity="0.4" strokeDasharray="8 8" fill="none" />
+
+        <path d="M-40 660 C160 610 280 730 470 790 C620 835 760 810 920 920 L-40 920 Z" fill="url(#playWaveSoft2)" />
+        <path d="M-20 685 C170 635 285 750 480 805 C610 842 745 830 890 910" stroke="url(#playStrokeGrad)" strokeWidth="3" strokeLinecap="round" fill="none" />
+
+        <path d="M1480 420 C1320 460 1240 590 1210 710 C1180 820 1070 865 920 920 L1480 920 Z" fill="url(#playWaveSoft1)" />
+        <path d="M1480 455 C1330 495 1255 615 1225 735 C1195 840 1095 880 960 920" stroke="url(#playStrokeGrad)" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+        <path d="M1480 515 C1355 548 1285 655 1260 765 C1235 855 1150 890 1040 920" stroke="#7c3aed" strokeWidth="1.5" strokeOpacity="0.35" fill="none" />
+
+        <g fill="#8b5cf6" fillOpacity="0.32">
+          <circle cx="1335" cy="180" r="3" /><circle cx="1355" cy="180" r="3" /><circle cx="1375" cy="180" r="3" /><circle cx="1395" cy="180" r="3" />
+          <circle cx="1335" cy="200" r="3" /><circle cx="1355" cy="200" r="3" /><circle cx="1375" cy="200" r="3" /><circle cx="1395" cy="200" r="3" />
+          <circle cx="1335" cy="220" r="3" /><circle cx="1355" cy="220" r="3" /><circle cx="1375" cy="220" r="3" /><circle cx="1395" cy="220" r="3" />
+          <circle cx="1335" cy="240" r="3" /><circle cx="1355" cy="240" r="3" /><circle cx="1375" cy="240" r="3" /><circle cx="1395" cy="240" r="3" />
+
+          <circle cx="48" cy="690" r="3" /><circle cx="68" cy="690" r="3" /><circle cx="88" cy="690" r="3" /><circle cx="108" cy="690" r="3" />
+          <circle cx="48" cy="710" r="3" /><circle cx="68" cy="710" r="3" /><circle cx="88" cy="710" r="3" /><circle cx="108" cy="710" r="3" />
+          <circle cx="48" cy="730" r="3" /><circle cx="68" cy="730" r="3" /><circle cx="88" cy="730" r="3" /><circle cx="108" cy="730" r="3" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
 /* ══════════════════════ MAIN APP ══════════════════════ */
 function App() {
   const [mode, setMode] = useState('home'); // home | student-join | student-lobby | student-play | leaderboard | teacher-auth | teacher-dashboard | teacher-create | teacher-lobby | teacher-live
@@ -2506,8 +2553,8 @@ function TeacherLive({ session, setSession, setMode, setNotice, initialPoll = nu
   const wrongAnswersCount = Math.max(0, totalQuestionAnswers - correctAnswersCount);
 
   return (
-    <main className="live-control-layout">
-      <CosmicDecorations />
+    <main className="live-control-layout teacher-theme-purple">
+      <PurpleWaveScene />
 
       {/* ── Top Bar Control Hub ── */}
       <div className="lc-top-bar">
@@ -3436,6 +3483,16 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         data.current_question?.id != null &&
         Number(data.current_question.id) === Number(lastQId.current)
       ) {
+        if (data.my_result && data.my_result.is_correct !== undefined) {
+          pendingResultRef.current = data.my_result;
+          setPendingResult(data.my_result);
+          if (data.my_result.correct_choice_id) {
+            setCorrectChoiceId(data.my_result.correct_choice_id);
+          }
+          if (data.my_result.answered && data.my_result.choice_id) {
+            setSelected(prev => prev ?? data.my_result.choice_id);
+          }
+        }
         triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
       }
       if (
@@ -3488,6 +3545,16 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         }
       }
       if (data.question_state === 'revealed' && !isRevealedRef.current) {
+        if (data.my_result && data.my_result.is_correct !== undefined) {
+          pendingResultRef.current = data.my_result;
+          setPendingResult(data.my_result);
+          if (data.my_result.correct_choice_id) {
+            setCorrectChoiceId(data.my_result.correct_choice_id);
+          }
+          if (data.my_result.answered && data.my_result.choice_id) {
+            setSelected(prev => prev ?? data.my_result.choice_id);
+          }
+        }
         triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
       }
       if (data.question_state === 'revealed' && data.show_mid_leaderboard === true && !showMidBoardRef.current) {
@@ -3522,6 +3589,16 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         !isRevealedRef.current &&
         Number(data.current_question.id) === Number(lastQId.current)
       ) {
+        if (data.my_result && data.my_result.is_correct !== undefined) {
+          pendingResultRef.current = data.my_result;
+          setPendingResult(data.my_result);
+          if (data.my_result.correct_choice_id) {
+            setCorrectChoiceId(data.my_result.correct_choice_id);
+          }
+          if (data.my_result.answered && data.my_result.choice_id) {
+            setSelected(prev => prev ?? data.my_result.choice_id);
+          }
+        }
         triggerReveal(data.current_question.correct_choice_id, data.current_question.id);
       }
       if (
@@ -3553,7 +3630,10 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
     }
 
     try {
-      const data = await get(`/sessions/${expectedPin}/state`);
+      const activeToken = playerRef.current?.token || getPlayerAuth(expectedPin)?.token;
+      const data = activeToken
+        ? await playerGet(expectedPin, `/sessions/${expectedPin}/state`, activeToken)
+        : await get(`/sessions/${expectedPin}/state`);
       if (!isMountedRef.current || sessionRef.current?.pin !== expectedPin) return;
       if (data && String(data.pin) === String(expectedPin)) {
         applyAuthoritativeSnapshot(data, 'recovery');
@@ -3911,7 +3991,10 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
       if (!isMounted || completed || sessionRef.current?.pin !== pin || pollInFlightRef.current) return;
       pollInFlightRef.current = true;
       try {
-        const data = await get(`/sessions/${pin}/state`);
+        const activeToken = playerRef.current?.token || getPlayerAuth(pin)?.token;
+        const data = activeToken
+          ? await playerGet(pin, `/sessions/${pin}/state`, activeToken)
+          : await get(`/sessions/${pin}/state`);
         if (!isMounted || sessionRef.current?.pin !== pin || !data) return;
         if (data.pin && String(data.pin) !== String(pin)) return;
 
@@ -4021,6 +4104,22 @@ function StudentPlay({ session, player, setMode, setNotice, setPlayer, restoredM
         if (isRevealedRef.current) {
           applyResultSoundAndScore(data);
         }
+      } else if (data?.question_state === 'revealed' && data?.my_result) {
+        // Auto-revealed immediately on server with bundled result: zero extra /my-result round-trip or verifying flash
+        const res = data.my_result;
+        const v = Number(data.state_version || 0);
+        if (v > lastProcessedVersionRef.current) {
+          lastProcessedVersionRef.current = v;
+          currentVersionRef.current = v;
+        }
+        pendingResultRef.current = res;
+        setPendingResult(res);
+        if (res.correct_choice_id) {
+          setCorrectChoiceId(res.correct_choice_id);
+        }
+        isRevealedRef.current = true;
+        setIsRevealed(true);
+        applyResultSoundAndScore(res);
       } else {
         // Secure mode (QUIZ_REVEAL_ON_ANSWER=false): result fetched upon reveal
         pendingResultRef.current = { accepted: true };

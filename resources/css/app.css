@@ -8634,5 +8634,96 @@ html, body {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   TEACHER LIVE PURPLE THEME (Harmonized with PurpleWaveScene)
+   ══════════════════════════════════════════════════════════════════ */
+.live-control-layout.teacher-theme-purple {
+  position: relative;
+  z-index: 10;
+}
+
+.teacher-theme-purple .lc-top-bar,
+.teacher-theme-purple .lc-main-grid {
+  position: relative;
+  z-index: 2;
+}
+
+.teacher-theme-purple .lc-top-bar {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(139, 92, 246, 0.24);
+  box-shadow: 0 12px 32px rgba(91, 33, 182, 0.08);
+}
+
+.teacher-theme-purple .lc-home-btn {
+  background: #f5f3ff;
+  border-color: rgba(139, 92, 246, 0.24);
+  color: #6d28d9;
+}
+
+.teacher-theme-purple .lc-home-btn:hover {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+.teacher-theme-purple .lc-kicker-tag,
+.teacher-theme-purple .lcp-cur,
+.teacher-theme-purple .qlp-answered-chip,
+.teacher-theme-purple .lrc-count-chip {
+  color: #6d28d9;
+}
+
+.teacher-theme-purple .lc-progress-badge {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(167, 139, 250, 0.16) 100%);
+  border-color: rgba(139, 92, 246, 0.26);
+}
+
+.teacher-theme-purple .qlp-answered-chip,
+.teacher-theme-purple .lrc-count-chip {
+  background: #f5f3ff;
+}
+
+.teacher-theme-purple .q-badge-num {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  box-shadow: 0 4px 12px rgba(109, 40, 217, 0.25);
+}
+
+.teacher-theme-purple .question-live-preview-card,
+.teacher-theme-purple .live-rankings-card,
+.teacher-theme-purple .lc-top5-stage-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1.5px solid rgba(139, 92, 246, 0.22);
+  box-shadow: 0 18px 44px rgba(91, 33, 182, 0.1);
+}
+
+.teacher-theme-purple .qlp-topline,
+.teacher-theme-purple .lrc-header,
+.teacher-theme-purple .lc-top5-header {
+  border-bottom-color: rgba(139, 92, 246, 0.14);
+}
+
+.teacher-theme-purple .lrc-row {
+  background: #faf8ff;
+  border-color: rgba(139, 92, 246, 0.16);
+}
+
+.teacher-theme-purple .lrc-row:hover {
+  border-color: rgba(124, 58, 237, 0.35);
+}
+
+.teacher-theme-purple .lc-pin-pill:hover {
+  background: #6d28d9;
+}
+
+.teacher-theme-purple .btn-next-giant {
+  background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%) !important;
+  border-color: #5b21b6 !important;
+  box-shadow: 0 6px 0 #5b21b6, 0 12px 24px rgba(109, 40, 217, 0.32) !important;
+}
+
+.teacher-theme-purple .btn-next-giant:hover:not(:disabled) {
+  box-shadow: 0 8px 0 #5b21b6, 0 16px 30px rgba(109, 40, 217, 0.42) !important;
+}
+
+
 
 

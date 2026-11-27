@@ -1195,6 +1195,30 @@ class SessionController extends Controller
         $data = $this->serializeSessionState($session);
         $data['server_now_ms'] = (int) round(microtime(true) * 1000);
 
+        // If the question is already revealed and the caller authenticates as a player,
+        // bundle their authoritative result so the UI shows instant feedback without an extra /my-result round-trip.
+        $playerToken = request()?->header('X-Player-Token');
+        if ($playerToken && $session->question_state === 'revealed') {
+            $tokenHash = hash('sha256', (string) $playerToken);
+            $player = $session->players->first(fn ($p) => $p->token_hash && hash_equals($p->token_hash, $tokenHash));
+            $currentQuestion = $session->currentQuestion();
+            if ($player && $currentQuestion) {
+                $answerRecord = Answer::where('player_id', $player->id)
+                    ->where('question_id', $currentQuestion->id)
+                    ->first();
+                $correctChoiceId = $data['current_question']['correct_choice_id'] ?? null;
+                $data['my_result'] = [
+                    'answered' => (bool) $answerRecord,
+                    'is_correct' => $answerRecord ? (bool) $answerRecord->is_correct : false,
+                    'points_earned' => $answerRecord ? (int) $answerRecord->points_earned : 0,
+                    'total_score' => (int) $player->score,
+                    'streak' => (int) $player->streak,
+                    'choice_id' => $answerRecord?->choice_id,
+                    'correct_choice_id' => $correctChoiceId,
+                ];
+            }
+        }
+
         return response()->json($data);
     }
 }

@@ -336,6 +336,7 @@ echo "\n── Part 3: Answer Secrecy & My-Result Endpoint (SEC-03) ──\n";
     $correctChoice = $currentQuestion->choices()->where('is_correct', true)->first();
 
     [$player, $playerToken] = createSecurePlayer($session, 'Secret Student', 'secret-p-tok');
+    createSecurePlayer($session, 'Other Active Student', 'other-p-tok');
 
     $req = Request::create("/api/sessions/{$session->pin}/answer", 'POST', [
         'player_id' => $player->id,
@@ -352,6 +353,7 @@ echo "\n── Part 3: Answer Secrecy & My-Result Endpoint (SEC-03) ──\n";
     assert_true(!isset($data['points_earned']), 'Response does NOT leak points_earned');
     assert_true(!isset($data['total_score']), 'Response does NOT leak total_score');
     assert_true(!isset($data['streak']), 'Response does NOT leak streak');
+    assert_true(!isset($data['my_result']), 'Response does NOT leak my_result while other players are still answering');
 }
 
 // Test 3.2: GET /my-result before reveal returns 409 Conflict (while another player has not answered yet)

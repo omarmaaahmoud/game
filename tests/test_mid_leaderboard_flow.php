@@ -187,8 +187,9 @@ $soloAnsData = json_decode($soloAnsResp->getContent(), true);
 $soloSession->refresh();
 
 ml_assert($soloAnsResp->getStatusCode() === 200 && $soloAnsData['accepted'] === true, 'Solo player answer accepted');
-ml_assert(!isset($soloAnsData['is_correct']) && !isset($soloAnsData['correct_choice_id']), 'Solo /answer response still never leaks is_correct or correct_choice_id');
+ml_assert(!isset($soloAnsData['is_correct']) && !isset($soloAnsData['correct_choice_id']), 'Solo /answer response still never leaks top-level is_correct or correct_choice_id');
 ml_assert(($soloAnsData['question_state'] ?? null) === 'revealed' && ($soloAnsData['all_answered'] ?? false) === true, 'Solo /answer returns question_state=revealed & all_answered=true');
+ml_assert(isset($soloAnsData['my_result']) && $soloAnsData['my_result']['is_correct'] === true && $soloAnsData['my_result']['points_earned'] >= 500, 'Solo /answer bundles my_result upon auto-reveal to prevent client round-trip lag');
 ml_assert($soloSession->question_state === 'revealed' && (bool) $soloSession->show_mid_leaderboard === false, 'Solo session auto-revealed immediately with show_mid_leaderboard=false');
 ml_assert($revealedBroadcast !== null && (int) $revealedBroadcast['correct_choice_id'] === (int) $soloRight->id, 'AnswerRevealed broadcast emitted on solo auto-reveal');
 
